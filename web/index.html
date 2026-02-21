@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nodus Studio - Playground</title>
+    <meta
+      id="metaDescription"
+      name="description"
+      content="Nodus Studio: редактирование JSON-схем, валидация runtime-правил и live preview интерфейса."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="top-controls">
+        <div class="lang-switch">
+          <button id="langRuBtn" class="btn btn-lang is-active" type="button">
+            <img class="lang-flag" src="/assets/flag-ru.png" alt="" aria-hidden="true" />
+            <span>RU</span>
+          </button>
+          <button id="langEnBtn" class="btn btn-lang" type="button">
+            <img class="lang-flag" src="/assets/flag-en.png" alt="" aria-hidden="true" />
+            <span>EN</span>
+          </button>
+        </div>
+        <button id="themeToggleBtn" class="btn theme-toggle is-dark" type="button" aria-label="Переключить тему" title="Переключить тему">
+          <img id="themeToggleIcon" class="theme-toggle-icon" src="/assets/moon.png" alt="" aria-hidden="true" />
+        </button>
+      </div>
+
+      <header class="hero card">
+        <div class="hero-copy">
+          <div class="hero-top">
+            <p class="eyebrow">Nodus Studio</p>
+          </div>
+          <h1 data-i18n="heroTitle">Песочница Backend-Driven UI</h1>
+          <p class="hero-subtitle" data-i18n="heroSubtitle">
+            Собирай контракт экрана в JSON, проверяй runtime-правила и сразу смотри визуальный результат.
+          </p>
+        </div>
+
+        <div class="hero-actions">
+          <button id="loadBtn" class="btn btn-ghost" type="button" data-i18n="loadBtn">Загрузить</button>
+          <button id="formatBtn" class="btn btn-ghost" type="button" data-i18n="formatBtn">Форматировать JSON</button>
+          <button id="renderBtn" class="btn btn-solid" type="button" data-i18n="renderBtn">Обновить превью</button>
+          <button id="saveBtn" class="btn btn-ghost" type="button" data-i18n="saveBtn">Сохранить</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="card editor-card">
+          <div class="card-head">
+            <h2 data-i18n="editorTitle">Редактор схемы</h2>
+            <span class="chip" data-i18n="editorChip">контракт v0.1</span>
+          </div>
+          <textarea id="jsonEditor" spellcheck="false"></textarea>
+        </section>
+
+        <section class="card preview-card">
+          <div class="card-head">
+            <h2 data-i18n="previewTitle">Предпросмотр</h2>
+            <span class="chip" data-i18n="previewChip">web-рендерер</span>
+          </div>
+          <div id="previewRoot" class="preview-root"></div>
+        </section>
+      </main>
+
+      <section class="telemetry">
+        <section class="card status-card">
+          <div class="card-head">
+            <h2 data-i18n="validationTitle">Валидация</h2>
+            <span class="chip chip-danger" data-i18n="validationChip">decode + validate</span>
+          </div>
+          <ul id="errorsList" class="list"></ul>
+        </section>
+
+        <section class="card status-card">
+          <div class="card-head">
+            <h2 data-i18n="actionTitle">Лента действий</h2>
+            <span class="chip chip-info" data-i18n="actionChip">локальный runtime</span>
+          </div>
+          <ul id="actionList" class="list"></ul>
+        </section>
+      </section>
+    </div>
+
+    <input id="jsonFileInput" class="file-input-hidden" type="file" accept=".json,application/json" />
+
+    <script src="/components/registry.js"></script>
+    <script src="/components/shared.js"></script>
+    <script src="/components/column.js"></script>
+    <script src="/components/row.js"></script>
+    <script src="/components/box.js"></script>
+    <script src="/components/text.js"></script>
+    <script src="/components/button.js"></script>
+    <script src="/components/spacer.js"></script>
+    <script src="/components/input.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
