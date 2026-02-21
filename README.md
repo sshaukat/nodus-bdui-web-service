@@ -5,8 +5,8 @@
 ### One-time foreground run
 
 ```bash
-cd /Users/srsalak2/Documents/Projects/Nodus/bdui-web-service
-./run-server.sh
+cd bdui-web-service
+./start-service.sh
 ```
 
 Open `http://127.0.0.1:8080`.
@@ -14,7 +14,7 @@ Open `http://127.0.0.1:8080`.
 Custom host/port:
 
 ```bash
-HOST=0.0.0.0 PORT=8090 ./start-server.sh
+HOST=0.0.0.0 PORT=8090 ./start-service.sh
 ```
 
 ### Background service scripts
@@ -22,14 +22,14 @@ HOST=0.0.0.0 PORT=8090 ./start-server.sh
 Restart service in background (single command):
 
 ```bash
-cd /Users/srsalak2/Documents/Projects/Nodus/bdui-web-service
+cd bdui-web-service
 ./restart-service.sh
 ```
 
 Stop background service:
 
 ```bash
-cd /Users/srsalak2/Documents/Projects/Nodus/bdui-web-service
+cd bdui-web-service
 ./stop-service.sh
 ```
 
