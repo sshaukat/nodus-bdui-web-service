@@ -1,6 +1,6 @@
 {
   "type": "column",
-  "id": "root",
+  "id": "form",
   "layout": {
     "padding": { "top": 8, "right": 8, "bottom": 8, "left": 8 }
   },
@@ -21,6 +21,9 @@
     },
     {
       "type": "row",
+      "justify": "left",
+      "gap": 12,
+      "wrap": "wrap",
       "children": [
         {
           "type": "button",

@@ -38,6 +38,12 @@ For background mode:
 - PID file: `.server.pid`
 - Log file: `.server.log`
 
+## Live Preview: quick schema assembly
+
+- In the left `Каталог компонентов / Component Library` panel choose a component card.
+- Click `Добавить / Add` to append that JSON template into root `children` in the schema editor.
+- Open `JSON шаблон и поля / JSON template and fields` to inspect the exact JSON and field hints before inserting.
+
 ## Endpoints
 
 - `GET /api/health`

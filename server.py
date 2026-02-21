@@ -13,7 +13,7 @@ WEB_DIR = Path(__file__).resolve().parent / "web"
 
 
 class BduiRuntime:
-    NODE_TYPES = {"column", "row", "box", "text", "button", "spacer", "input"}
+    NODE_TYPES = {"column", "row", "box", "text", "button", "iconbutton", "spacer", "input"}
     ACTION_TYPES = {"log", "open_url", "navigate"}
 
     @classmethod
@@ -63,12 +63,32 @@ class BduiRuntime:
 
         if node_type in {"column", "row", "box"}:
             node["children"] = cls._decode_children(source.get("children"), f"{path}.children", errors)
+        if node_type == "row":
+            if "justify" in source:
+                node["justify"] = source.get("justify")
+            if "distribution" in source:
+                node["distribution"] = source.get("distribution")
+            if "alignItems" in source:
+                node["alignItems"] = source.get("alignItems")
+            if "crossAlign" in source:
+                node["crossAlign"] = source.get("crossAlign")
+            if "wrap" in source:
+                node["wrap"] = source.get("wrap")
+            if "gap" in source:
+                node["gap"] = source.get("gap")
 
         if node_type == "text":
             node["value"] = source.get("value")
 
         if node_type == "button":
             node["title"] = source.get("title")
+            action = cls._decode_action(source.get("action"), f"{path}.action", errors)
+            if action is not None:
+                node["action"] = action
+
+        if node_type == "iconbutton":
+            node["title"] = source.get("title")
+            node["icon"] = source.get("icon")
             action = cls._decode_action(source.get("action"), f"{path}.action", errors)
             if action is not None:
                 node["action"] = action
@@ -204,14 +224,93 @@ class BduiRuntime:
                 errors.append({"path": path, "message": "Button node field 'title' is required"})
             cls._validate_action(node.get("action"), f"{path}.action", errors)
 
+        if node_type == "iconbutton":
+            title = node.get("title")
+            if title is not None and (not isinstance(title, str) or not title.strip()):
+                errors.append({"path": path, "message": "IconButton field 'title' must not be blank"})
+
+            icon = node.get("icon")
+            allowed_icons = {
+                "plus",
+                "minus",
+                "edit",
+                "trash",
+                "search",
+                "settings",
+                "check",
+                "close",
+                "arrow-left",
+                "arrow-right",
+                "menu",
+            }
+            if not isinstance(icon, str) or icon.lower() not in allowed_icons:
+                errors.append({"path": path, "message": "IconButton field 'icon' has unsupported value"})
+
+            cls._validate_action(node.get("action"), f"{path}.action", errors)
+
         if node_type == "input":
             input_id = node.get("id")
             if not isinstance(input_id, str) or not input_id.strip():
                 errors.append({"path": path, "message": "Input node requires non-empty id"})
             cls._validate_action(node.get("onChange"), f"{path}.onChange", errors)
 
+        if node_type == "row":
+            cls._validate_row(node, path, errors)
+
         for index, child in enumerate(node.get("children", [])):
             cls._validate_node(child, f"{path}.children[{index}]", errors, seen_ids)
+
+    @classmethod
+    def _validate_row(
+        cls,
+        node: dict[str, Any],
+        path: str,
+        errors: list[dict[str, str]],
+    ) -> None:
+        justify = node.get("justify")
+        if justify is not None:
+            allowed_justify = {
+                "left",
+                "start",
+                "flex-start",
+                "right",
+                "end",
+                "flex-end",
+                "center",
+                "space-between",
+                "between",
+                "space-around",
+                "space-evenly",
+            }
+            if not isinstance(justify, str) or justify.lower() not in allowed_justify:
+                errors.append({"path": f"{path}.justify", "message": "Unsupported row justify value"})
+
+        distribution = node.get("distribution")
+        if distribution is not None:
+            allowed_distribution = {"space-between", "between", "space-around", "space-evenly"}
+            if not isinstance(distribution, str) or distribution.lower() not in allowed_distribution:
+                errors.append({"path": f"{path}.distribution", "message": "Unsupported row distribution value"})
+
+        align_items = node.get("alignItems")
+        if align_items is not None:
+            allowed_align = {"top", "start", "flex-start", "bottom", "end", "flex-end", "center", "stretch", "baseline"}
+            if not isinstance(align_items, str) or align_items.lower() not in allowed_align:
+                errors.append({"path": f"{path}.alignItems", "message": "Unsupported row alignItems value"})
+
+        cross_align = node.get("crossAlign")
+        if cross_align is not None:
+            allowed_cross = {"top", "start", "flex-start", "bottom", "end", "flex-end", "center", "stretch", "baseline"}
+            if not isinstance(cross_align, str) or cross_align.lower() not in allowed_cross:
+                errors.append({"path": f"{path}.crossAlign", "message": "Unsupported row crossAlign value"})
+
+        wrap = node.get("wrap")
+        if wrap is not None:
+            if not isinstance(wrap, str) or wrap.lower() not in {"wrap", "nowrap", "wrap-reverse"}:
+                errors.append({"path": f"{path}.wrap", "message": "Unsupported row wrap value"})
+
+        gap = node.get("gap")
+        if gap is not None and not isinstance(gap, (int, float)):
+            errors.append({"path": f"{path}.gap", "message": "Row gap must be a number"})
 
     @classmethod
     def _validate_action(
