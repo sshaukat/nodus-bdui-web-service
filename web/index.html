@@ -112,7 +112,7 @@
               <button id="clearEditorBtn" class="btn btn-ghost editor-clear-btn" type="button" data-i18n="clearBtn">Очистить</button>
             </div>
           </div>
-          <textarea id="jsonEditor" spellcheck="false"></textarea>
+          <div id="jsonEditor" aria-label="Schema editor"></div>
           <p id="editorFileInfo" class="editor-file-info"></p>
         </section>
 
@@ -160,6 +160,6 @@
     <script src="/components/iconbutton.js"></script>
     <script src="/components/spacer.js"></script>
     <script src="/components/input.js"></script>
-    <script src="/app.js"></script>
+    <script type="module" src="/app.js"></script>
   </body>
 </html>

@@ -1,3 +1,8 @@
+import { EditorState } from "https://esm.sh/@codemirror/state";
+import { EditorView } from "https://esm.sh/@codemirror/view";
+import { json } from "https://esm.sh/@codemirror/lang-json";
+import { basicSetup } from "https://esm.sh/codemirror";
+
 const LOCALE_KEY = "nodus.locale";
 const THEME_KEY = "nodus.theme";
 const LAST_SCHEMA_KEY = "nodus.lastSchema";
@@ -174,7 +179,28 @@ const I18N = {
 
 const DEFAULT_SCHEMA_FALLBACK = formatSchema(FORM_SCHEMA_TEMPLATE);
 
-const editor = document.getElementById("jsonEditor");
+const editorContainer = document.getElementById("jsonEditor");
+let editorView = null;
+const editor = {
+  get value() {
+    return editorView ? editorView.state.doc.toString() : "";
+  },
+  set value(nextValue) {
+    if (!editorView) {
+      return;
+    }
+    const current = editorView.state.doc.toString();
+    if (nextValue === current) {
+      return;
+    }
+    editorView.dispatch({
+      changes: { from: 0, to: editorView.state.doc.length, insert: nextValue },
+    });
+  },
+  get selectionStart() {
+    return editorView ? editorView.state.selection.main.head : 0;
+  },
+};
 const workspace = document.getElementById("workspace");
 const componentsCard = document.getElementById("componentsCard");
 const editorCard = document.getElementById("editorCard");
@@ -409,14 +435,6 @@ loadBtn.addEventListener("click", onLoadClick);
 renderBtn.addEventListener("click", () => renderSchema(editor.value));
 formatBtn.addEventListener("click", onFormatClick);
 clearEditorBtn.addEventListener("click", onClearEditorClick);
-editor.addEventListener("input", debounce(() => renderSchema(editor.value), 300));
-editor.addEventListener(
-  "input",
-  debounce(() => {
-    persistEditorSchema(editor.value);
-    setUnsavedChanges(true);
-  }, 250),
-);
 langRuBtn.addEventListener("click", () => setLocale("ru"));
 langEnBtn.addEventListener("click", () => setLocale("en"));
 themeToggleBtn.addEventListener("click", () => setTheme(currentTheme === "light" ? "dark" : "light"));
@@ -512,7 +530,8 @@ function t(key) {
 }
 
 async function initializeApp() {
-  editor.value = await loadInitialSchema();
+  const initialSchema = await loadInitialSchema();
+  initializeEditor(initialSchema);
   await ensureInitialRegistry();
   await hydrateRegistrySelectors();
   renderComponentPalette();
@@ -521,6 +540,61 @@ async function initializeApp() {
   setLocale(currentLocale, { rerender: false });
   setUnsavedChanges(true);
   await renderSchema(editor.value);
+}
+
+function initializeEditor(initialValue) {
+  if (!editorContainer) {
+    return;
+  }
+
+  const editorTheme = EditorView.theme({
+    "&": {
+      height: "100%",
+      backgroundColor: "transparent",
+      color: "var(--editor-text)",
+      fontFamily: '"JetBrains Mono", monospace',
+      fontSize: "16px",
+    },
+    ".cm-content": {
+      padding: "16px",
+    },
+    ".cm-gutters": {
+      backgroundColor: "transparent",
+      borderRight: "1px solid var(--editor-border)",
+      color: "var(--text-soft)",
+    },
+    ".cm-activeLineGutter": {
+      backgroundColor: "rgba(65, 199, 255, 0.08)",
+    },
+    ".cm-activeLine": {
+      backgroundColor: "rgba(65, 199, 255, 0.06)",
+    },
+  });
+
+  const renderDebounced = debounce(() => renderSchema(editor.value), 300);
+  const persistDebounced = debounce(() => {
+    persistEditorSchema(editor.value);
+    setUnsavedChanges(true);
+  }, 250);
+
+  editorView = new EditorView({
+    state: EditorState.create({
+      doc: initialValue,
+      extensions: [
+        basicSetup,
+        json(),
+        EditorView.lineWrapping,
+        editorTheme,
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            renderDebounced();
+            persistDebounced();
+          }
+        }),
+      ],
+    }),
+    parent: editorContainer,
+  });
 }
 
 async function loadInitialSchema() {
