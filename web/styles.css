@@ -479,9 +479,9 @@ body.is-resizing {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
-  height: clamp(190px, 23vh, 250px);
-  min-height: clamp(190px, 23vh, 250px);
-  max-height: clamp(190px, 23vh, 250px);
+  height: clamp(122px, 14.8vh, 160px);
+  min-height: clamp(122px, 14.8vh, 160px);
+  max-height: clamp(122px, 14.8vh, 160px);
 }
 
 .components-card,
