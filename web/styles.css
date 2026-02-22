@@ -373,6 +373,55 @@ button {
   min-height: 0;
 }
 
+.context-card {
+  padding: 14px 17px;
+}
+
+.context-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.context-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.context-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.context-field select {
+  width: 100%;
+  min-height: 35px;
+  border-radius: 10px;
+  border: 1px solid var(--editor-border);
+  background: var(--node-input-bg);
+  color: var(--node-input-text);
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 10px;
+}
+
+.context-btn-sm {
+  padding: 7px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.context-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .components-card,
 .editor-card,
 .preview-card {
@@ -430,6 +479,9 @@ body.is-resizing {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+  height: clamp(190px, 23vh, 250px);
+  min-height: clamp(190px, 23vh, 250px);
+  max-height: clamp(190px, 23vh, 250px);
 }
 
 .components-card,
@@ -437,6 +489,14 @@ body.is-resizing {
 .preview-card,
 .status-card {
   padding: 17px;
+}
+
+.status-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
 }
 
 .component-palette-list {
@@ -718,9 +778,11 @@ h2 {
   margin: 0;
   padding-left: 0;
   list-style: none;
-  min-height: 150px;
-  max-height: 270px;
-  overflow: auto;
+  min-height: 0;
+  max-height: none;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: grid;
   gap: 7px;
 }
@@ -787,6 +849,10 @@ h2 {
     gap: 14px;
   }
 
+  .context-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .workspace-splitter {
     display: none;
   }
@@ -799,6 +865,9 @@ h2 {
 
   .telemetry {
     grid-template-columns: 1fr;
+    min-height: auto;
+    height: auto;
+    max-height: none;
   }
 
   .hero {
@@ -811,6 +880,12 @@ h2 {
   .preview-root {
     min-height: 400px;
   }
+
+  .status-card {
+    max-height: none;
+    min-height: 240px;
+    height: auto;
+  }
 }
 
 @media (max-width: 680px) {
@@ -822,6 +897,7 @@ h2 {
   }
 
   .hero,
+  .context-card,
   .components-card,
   .editor-card,
   .preview-card,
@@ -853,5 +929,9 @@ h2 {
     width: 44px;
     min-width: 44px;
     height: 32px;
+  }
+
+  .context-grid {
+    grid-template-columns: 1fr;
   }
 }

@@ -20,6 +20,24 @@ if ! kill -0 "$PID" 2>/dev/null; then
   exit 1
 fi
 
+if command -v curl >/dev/null 2>&1; then
+  HEALTH_URL="http://$HOST:$PORT/api/health"
+  READY=0
+  for _ in {1..20}; do
+    if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
+      READY=1
+      break
+    fi
+    sleep 0.2
+  done
+
+  if [[ "$READY" -ne 1 ]]; then
+    echo "Process started but health check failed: $HEALTH_URL"
+    echo "Check log: $LOG_FILE"
+    exit 1
+  fi
+fi
+
 echo "Service restarted"
 echo "PID: $PID"
 echo "URL: http://$HOST:$PORT"

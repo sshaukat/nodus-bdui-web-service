@@ -46,17 +46,58 @@
           </p>
         </div>
 
-        <div class="hero-actions">
-          <button id="loadBtn" class="btn btn-ghost" type="button" data-i18n="loadBtn">Загрузить</button>
-          <button id="saveBtn" class="btn btn-ghost" type="button" data-i18n="saveBtn">Сохранить</button>
-        </div>
       </header>
+
+      <section id="contextCard" class="card context-card">
+        <div class="card-head">
+          <h2 data-i18n="contextTitle">Контекст контракта</h2>
+          <span class="chip" data-i18n="contextChip">project / contract / version</span>
+        </div>
+        <div class="context-grid">
+          <label class="context-field">
+            <span data-i18n="projectLabel">Проект</span>
+            <div class="context-input-row">
+              <select id="projectSelect"></select>
+              <button id="newProjectBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="newBtn">Создать</button>
+            </div>
+          </label>
+          <label class="context-field">
+            <span data-i18n="contractLabel">Контракт</span>
+            <div class="context-input-row">
+              <select id="contractSelect"></select>
+              <button id="newContractBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="newBtn">Создать</button>
+            </div>
+          </label>
+          <label class="context-field">
+            <span data-i18n="versionLabel">Версия</span>
+            <div class="context-input-row">
+              <select id="versionSelect"></select>
+              <button id="newVersionBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="newBtn">Создать</button>
+            </div>
+          </label>
+          <label class="context-field">
+            <span data-i18n="screenLabel">Схема экрана</span>
+            <div class="context-input-row">
+              <select id="screenSelect"></select>
+              <button id="newScreenBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="newBtn">Создать</button>
+            </div>
+          </label>
+        </div>
+        <div class="context-actions">
+          <button id="contextLoadBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="loadBtn">Загрузить</button>
+          <button id="renameScreenBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="renameBtn">Переименовать</button>
+          <button id="toggleScreenStatusBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="toggleStatusBtn">Актив/Неактив</button>
+          <button id="deleteScreenBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="deleteBtn">Удалить</button>
+          <button id="saveScreenBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="saveScreenBtn">Сохранить экран</button>
+          <button id="publishVersionBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="publishBtn">Публиковать</button>
+        </div>
+        <p id="contextInfo" class="editor-file-info"></p>
+      </section>
 
       <main id="workspace" class="workspace">
         <section id="componentsCard" class="card components-card">
           <div class="card-head">
             <h2 data-i18n="componentsTitle">Каталог компонентов</h2>
-            <span class="chip" data-i18n="componentsChip">быстрая сборка</span>
           </div>
           <div id="componentPaletteList" class="component-palette-list"></div>
         </section>
@@ -67,7 +108,6 @@
           <div class="card-head">
             <h2 data-i18n="editorTitle">Редактор схемы</h2>
             <div class="card-head-tools">
-              <span class="chip" data-i18n="editorChip">контракт v0.1</span>
               <button id="formatBtn" class="btn btn-ghost editor-format-btn" type="button" data-i18n="formatBtn">Форматировать JSON</button>
               <button id="clearEditorBtn" class="btn btn-ghost editor-clear-btn" type="button" data-i18n="clearBtn">Очистить</button>
             </div>
@@ -82,7 +122,6 @@
           <div class="card-head">
             <h2 data-i18n="previewTitle">Предпросмотр</h2>
             <div class="card-head-tools">
-              <span class="chip" data-i18n="previewChip">web-рендерер</span>
               <button id="renderBtn" class="btn btn-ghost preview-refresh-btn" type="button" data-i18n="renderBtn">Обновить превью</button>
             </div>
           </div>

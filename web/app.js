@@ -68,6 +68,33 @@ const I18N = {
     fileLoadError: "ошибка загрузки файла",
     saveDefaultName: "nodus-schema.json",
     themeToggleAria: "Переключить тему",
+    contextTitle: "Контекст контракта",
+    contextChip: "project / contract / version",
+    projectLabel: "Проект",
+    contractLabel: "Контракт",
+    versionLabel: "Версия",
+    screenLabel: "Схема экрана",
+    newBtn: "Создать",
+    renameBtn: "Переименовать",
+    toggleStatusBtn: "Актив/Неактив",
+    deleteBtn: "Удалить",
+    saveScreenBtn: "Сохранить экран",
+    publishBtn: "Публиковать",
+    contextNotSelected: "Контекст не выбран",
+    contextCurrent: "Текущий контекст:",
+    contextSaved: "экран сохранен",
+    contextPublished: "версия опубликована",
+    contextLoadError: "ошибка загрузки контекста",
+    contextSaveError: "ошибка сохранения экрана",
+    contextPublishError: "ошибка публикации версии",
+    promptProjectId: "Введите project_id (латиница, цифры, -_):",
+    promptProjectName: "Введите название проекта:",
+    promptContractId: "Введите contract_id (латиница, цифры, -_):",
+    promptContractName: "Введите название контракта:",
+    promptVersionId: "Введите version_id (пример: v0-2):",
+    promptScreenId: "Введите screen_id (латиница, цифры, -_):",
+    promptScreenName: "Введите название схемы экрана:",
+    promptRenameScreen: "Введите новое название схемы:",
   },
   en: {
     documentTitle: "Nodus Studio - BDUI Playground",
@@ -115,6 +142,33 @@ const I18N = {
     fileLoadError: "file load error",
     saveDefaultName: "nodus-schema.json",
     themeToggleAria: "Toggle theme",
+    contextTitle: "Contract Context",
+    contextChip: "project / contract / version",
+    projectLabel: "Project",
+    contractLabel: "Contract",
+    versionLabel: "Version",
+    screenLabel: "Screen Schema",
+    newBtn: "Create",
+    renameBtn: "Rename",
+    toggleStatusBtn: "Active/Inactive",
+    deleteBtn: "Delete",
+    saveScreenBtn: "Save Screen",
+    publishBtn: "Publish",
+    contextNotSelected: "Context is not selected",
+    contextCurrent: "Current context:",
+    contextSaved: "screen saved",
+    contextPublished: "version published",
+    contextLoadError: "context load error",
+    contextSaveError: "screen save error",
+    contextPublishError: "version publish error",
+    promptProjectId: "Enter project_id (latin, digits, -_):",
+    promptProjectName: "Enter project name:",
+    promptContractId: "Enter contract_id (latin, digits, -_):",
+    promptContractName: "Enter contract name:",
+    promptVersionId: "Enter version_id (example: v0-2):",
+    promptScreenId: "Enter screen_id (latin, digits, -_):",
+    promptScreenName: "Enter screen schema name:",
+    promptRenameScreen: "Enter new screen name:",
   },
 };
 
@@ -129,10 +183,9 @@ const componentPaletteList = document.getElementById("componentPaletteList");
 const previewRoot = document.getElementById("previewRoot");
 const errorsList = document.getElementById("errorsList");
 const actionList = document.getElementById("actionList");
-const loadBtn = document.getElementById("loadBtn");
+const loadBtn = document.getElementById("contextLoadBtn");
 const renderBtn = document.getElementById("renderBtn");
 const formatBtn = document.getElementById("formatBtn");
-const saveBtn = document.getElementById("saveBtn");
 const clearEditorBtn = document.getElementById("clearEditorBtn");
 const editorFileInfo = document.getElementById("editorFileInfo");
 const langRuBtn = document.getElementById("langRuBtn");
@@ -142,6 +195,20 @@ const themeToggleIcon = document.getElementById("themeToggleIcon");
 const metaDescription = document.getElementById("metaDescription");
 const jsonFileInput = document.getElementById("jsonFileInput");
 const workspaceSplitters = Array.from(document.querySelectorAll(".workspace-splitter"));
+const projectSelect = document.getElementById("projectSelect");
+const contractSelect = document.getElementById("contractSelect");
+const versionSelect = document.getElementById("versionSelect");
+const screenSelect = document.getElementById("screenSelect");
+const newProjectBtn = document.getElementById("newProjectBtn");
+const newContractBtn = document.getElementById("newContractBtn");
+const newVersionBtn = document.getElementById("newVersionBtn");
+const newScreenBtn = document.getElementById("newScreenBtn");
+const renameScreenBtn = document.getElementById("renameScreenBtn");
+const toggleScreenStatusBtn = document.getElementById("toggleScreenStatusBtn");
+const deleteScreenBtn = document.getElementById("deleteScreenBtn");
+const saveScreenBtn = document.getElementById("saveScreenBtn");
+const publishVersionBtn = document.getElementById("publishVersionBtn");
+const contextInfo = document.getElementById("contextInfo");
 const PANEL_LIMITS = {
   componentsCard: { min: 260, max: 720 },
   editorCard: { min: 420, max: 1100 },
@@ -160,6 +227,12 @@ let currentTheme = resolveInitialTheme();
 let currentFileHandle = null;
 let currentFileName = "";
 let hasUnsavedChanges = true;
+const registryState = {
+  projectId: "",
+  contractId: "",
+  versionId: "",
+  screenId: "",
+};
 const COMPONENT_LIBRARY = [
   {
     type: "form",
@@ -335,7 +408,6 @@ const COMPONENT_LIBRARY = [
 loadBtn.addEventListener("click", onLoadClick);
 renderBtn.addEventListener("click", () => renderSchema(editor.value));
 formatBtn.addEventListener("click", onFormatClick);
-saveBtn.addEventListener("click", onSaveClick);
 clearEditorBtn.addEventListener("click", onClearEditorClick);
 editor.addEventListener("input", debounce(() => renderSchema(editor.value), 300));
 editor.addEventListener(
@@ -348,6 +420,19 @@ editor.addEventListener(
 langRuBtn.addEventListener("click", () => setLocale("ru"));
 langEnBtn.addEventListener("click", () => setLocale("en"));
 themeToggleBtn.addEventListener("click", () => setTheme(currentTheme === "light" ? "dark" : "light"));
+projectSelect.addEventListener("change", onProjectChanged);
+contractSelect.addEventListener("change", onContractChanged);
+versionSelect.addEventListener("change", onVersionChanged);
+screenSelect.addEventListener("change", onScreenChanged);
+newProjectBtn.addEventListener("click", onCreateProject);
+newContractBtn.addEventListener("click", onCreateContract);
+newVersionBtn.addEventListener("click", onCreateVersion);
+newScreenBtn.addEventListener("click", onCreateScreen);
+renameScreenBtn.addEventListener("click", onRenameScreen);
+toggleScreenStatusBtn.addEventListener("click", onToggleScreenStatus);
+deleteScreenBtn.addEventListener("click", onDeleteScreen);
+saveScreenBtn.addEventListener("click", onSaveScreen);
+publishVersionBtn.addEventListener("click", onPublishVersion);
 
 initializeApp();
 
@@ -393,6 +478,7 @@ function setLocale(locale, options = {}) {
   renderComponentPalette();
   updateEditorFileInfo();
   updateSaveButtonState();
+  updateContextInfo();
 
   if (rerender) {
     renderSchema(editor.value);
@@ -427,6 +513,8 @@ function t(key) {
 
 async function initializeApp() {
   editor.value = await loadInitialSchema();
+  await ensureInitialRegistry();
+  await hydrateRegistrySelectors();
   renderComponentPalette();
   initializeWorkspaceSplitters();
   setTheme(currentTheme);
@@ -461,7 +549,9 @@ function setUnsavedChanges(isDirty) {
 }
 
 function updateSaveButtonState() {
-  saveBtn.classList.toggle("btn-save-dirty", hasUnsavedChanges);
+  if (saveScreenBtn) {
+    saveScreenBtn.classList.toggle("btn-save-dirty", hasUnsavedChanges);
+  }
 }
 
 function updateEditorFileInfo() {
@@ -476,6 +566,363 @@ function updateEditorFileInfo() {
 
   const autosaveHint = currentFileHandle ? t("autosaveToSameFile") : t("editorPathHidden");
   editorFileInfo.textContent = `${t("editorFileLinked")} ${currentFileName} (${autosaveHint})`;
+}
+
+async function apiRequest(path, options = {}) {
+  const response = await fetch(path, options);
+  const payload = await response.json();
+  if (!response.ok) {
+    const message = payload && payload.error ? payload.error : `HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  return payload;
+}
+
+function contextQuery() {
+  const params = new URLSearchParams();
+  params.set("project_id", registryState.projectId);
+  params.set("contract_id", registryState.contractId);
+  params.set("version_id", registryState.versionId);
+  return params.toString();
+}
+
+async function ensureInitialRegistry() {
+  let projects = (await apiRequest("/api/projects")).items || [];
+  if (projects.length === 0) {
+    await apiRequest("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: "demo", name: "Demo Project" }),
+    });
+    projects = (await apiRequest("/api/projects")).items || [];
+  }
+  registryState.projectId = projects[0].project_id;
+
+  let contracts = (await apiRequest(`/api/contracts?project_id=${encodeURIComponent(registryState.projectId)}`)).items || [];
+  if (contracts.length === 0) {
+    await apiRequest("/api/contracts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project_id: registryState.projectId,
+        contract_id: "main-contract",
+        name: "Main Contract",
+      }),
+    });
+    contracts = (await apiRequest(`/api/contracts?project_id=${encodeURIComponent(registryState.projectId)}`)).items || [];
+  }
+  registryState.contractId = contracts[0].contract_id;
+
+  let versions =
+    (await apiRequest(
+      `/api/versions?project_id=${encodeURIComponent(registryState.projectId)}&contract_id=${encodeURIComponent(registryState.contractId)}`,
+    )).items || [];
+  if (versions.length === 0) {
+    await apiRequest("/api/versions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project_id: registryState.projectId,
+        contract_id: registryState.contractId,
+        version_id: "v0-1",
+      }),
+    });
+    versions =
+      (await apiRequest(
+        `/api/versions?project_id=${encodeURIComponent(registryState.projectId)}&contract_id=${encodeURIComponent(registryState.contractId)}`,
+      )).items || [];
+  }
+  registryState.versionId = versions[0].version_id;
+
+  let screens = (await apiRequest(`/api/screens?${contextQuery()}`)).items || [];
+  if (screens.length === 0) {
+    await apiRequest("/api/screens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project_id: registryState.projectId,
+        contract_id: registryState.contractId,
+        version_id: registryState.versionId,
+        screen_id: "home",
+        name: "Home",
+        content_json: JSON.parse(DEFAULT_SCHEMA_FALLBACK),
+      }),
+    });
+    screens = (await apiRequest(`/api/screens?${contextQuery()}`)).items || [];
+  }
+  registryState.screenId = screens[0].screen_id;
+}
+
+async function hydrateRegistrySelectors() {
+  try {
+    const projects = (await apiRequest("/api/projects")).items || [];
+    fillSelect(projectSelect, projects, "project_id", "name", registryState.projectId);
+    if (!registryState.projectId && projects[0]) {
+      registryState.projectId = projects[0].project_id;
+    }
+    await hydrateContracts();
+    updateContextInfo();
+  } catch {
+    appendAction(`[${t("systemLabel")}] ${t("contextLoadError")}`);
+  }
+}
+
+async function hydrateContracts() {
+  if (!registryState.projectId) {
+    fillSelect(contractSelect, [], "contract_id", "name", "");
+    return;
+  }
+  const contracts = (await apiRequest(`/api/contracts?project_id=${encodeURIComponent(registryState.projectId)}`)).items || [];
+  if (!contracts.find((item) => item.contract_id === registryState.contractId)) {
+    registryState.contractId = contracts[0] ? contracts[0].contract_id : "";
+  }
+  fillSelect(contractSelect, contracts, "contract_id", "name", registryState.contractId);
+  await hydrateVersions();
+}
+
+async function hydrateVersions() {
+  if (!registryState.projectId || !registryState.contractId) {
+    fillSelect(versionSelect, [], "version_id", "version_id", "");
+    return;
+  }
+  const versions =
+    (await apiRequest(
+      `/api/versions?project_id=${encodeURIComponent(registryState.projectId)}&contract_id=${encodeURIComponent(registryState.contractId)}`,
+    )).items || [];
+  if (!versions.find((item) => item.version_id === registryState.versionId)) {
+    registryState.versionId = versions[0] ? versions[0].version_id : "";
+  }
+  fillSelect(versionSelect, versions, "version_id", "version_id", registryState.versionId);
+  await hydrateScreens();
+}
+
+async function hydrateScreens() {
+  if (!registryState.projectId || !registryState.contractId || !registryState.versionId) {
+    fillSelect(screenSelect, [], "screen_id", "name", "");
+    return;
+  }
+
+  const screens = (await apiRequest(`/api/screens?${contextQuery()}`)).items || [];
+  const activeScreens = screens.filter((item) => item.status !== "deleted");
+  if (!activeScreens.find((item) => item.screen_id === registryState.screenId)) {
+    registryState.screenId = activeScreens[0] ? activeScreens[0].screen_id : "";
+  }
+  fillSelect(screenSelect, activeScreens, "screen_id", "name", registryState.screenId);
+
+  const selected = activeScreens.find((item) => item.screen_id === registryState.screenId);
+  if (selected && typeof selected.content_raw === "string") {
+    editor.value = selected.content_raw.endsWith("\n") ? selected.content_raw : `${selected.content_raw}\n`;
+    persistEditorSchema(editor.value);
+    setUnsavedChanges(false);
+    await renderSchema(editor.value);
+  } else if (selected && selected.content_json) {
+    editor.value = formatSchema(selected.content_json);
+    persistEditorSchema(editor.value);
+    setUnsavedChanges(false);
+    await renderSchema(editor.value);
+  }
+  updateContextInfo();
+}
+
+function fillSelect(element, items, valueKey, labelKey, selectedValue) {
+  if (!element) {
+    return;
+  }
+  element.innerHTML = "";
+  items.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item[valueKey] || "";
+    option.textContent = item[labelKey] || item[valueKey] || "";
+    if (option.value === selectedValue) {
+      option.selected = true;
+    }
+    element.appendChild(option);
+  });
+}
+
+function updateContextInfo() {
+  if (!contextInfo) {
+    return;
+  }
+  if (!registryState.projectId || !registryState.contractId || !registryState.versionId || !registryState.screenId) {
+    contextInfo.textContent = t("contextNotSelected");
+    return;
+  }
+  contextInfo.textContent = `${t("contextCurrent")} ${registryState.projectId} / ${registryState.contractId} / ${registryState.versionId} / ${registryState.screenId}`;
+}
+
+async function onProjectChanged() {
+  registryState.projectId = projectSelect.value;
+  registryState.contractId = "";
+  registryState.versionId = "";
+  registryState.screenId = "";
+  await hydrateContracts();
+  updateContextInfo();
+}
+
+async function onContractChanged() {
+  registryState.contractId = contractSelect.value;
+  registryState.versionId = "";
+  registryState.screenId = "";
+  await hydrateVersions();
+  updateContextInfo();
+}
+
+async function onVersionChanged() {
+  registryState.versionId = versionSelect.value;
+  registryState.screenId = "";
+  await hydrateScreens();
+  updateContextInfo();
+}
+
+async function onScreenChanged() {
+  registryState.screenId = screenSelect.value;
+  await hydrateScreens();
+  updateContextInfo();
+}
+
+async function onCreateProject() {
+  const projectId = (window.prompt(t("promptProjectId"), "demo-project") || "").trim();
+  if (!projectId) return;
+  const name = (window.prompt(t("promptProjectName"), projectId) || "").trim() || projectId;
+  await apiRequest("/api/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId, name }),
+  });
+  registryState.projectId = projectId;
+  await hydrateRegistrySelectors();
+}
+
+async function onCreateContract() {
+  if (!registryState.projectId) return;
+  const contractId = (window.prompt(t("promptContractId"), "main-contract") || "").trim();
+  if (!contractId) return;
+  const name = (window.prompt(t("promptContractName"), contractId) || "").trim() || contractId;
+  await apiRequest("/api/contracts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: registryState.projectId, contract_id: contractId, name }),
+  });
+  registryState.contractId = contractId;
+  await hydrateContracts();
+}
+
+async function onCreateVersion() {
+  if (!registryState.projectId || !registryState.contractId) return;
+  const versionId = (window.prompt(t("promptVersionId"), "v0-2") || "").trim();
+  if (!versionId) return;
+  await apiRequest("/api/versions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project_id: registryState.projectId,
+      contract_id: registryState.contractId,
+      version_id: versionId,
+      based_on_version_id: registryState.versionId || null,
+    }),
+  });
+  registryState.versionId = versionId;
+  await hydrateVersions();
+}
+
+async function onCreateScreen() {
+  if (!registryState.projectId || !registryState.contractId || !registryState.versionId) return;
+  const screenId = (window.prompt(t("promptScreenId"), "screen-new") || "").trim();
+  if (!screenId) return;
+  const name = (window.prompt(t("promptScreenName"), screenId) || "").trim() || screenId;
+  let parsedContent;
+  try {
+    parsedContent = JSON.parse(editor.value);
+  } catch {
+    appendAction(`[${t("systemLabel")}] ${t("componentInsertError")}`);
+    return;
+  }
+  await apiRequest("/api/screens", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project_id: registryState.projectId,
+      contract_id: registryState.contractId,
+      version_id: registryState.versionId,
+      screen_id: screenId,
+      name,
+      content_json: parsedContent,
+    }),
+  });
+  registryState.screenId = screenId;
+  await hydrateScreens();
+}
+
+async function onRenameScreen() {
+  if (!registryState.screenId) return;
+  const newName = (window.prompt(t("promptRenameScreen"), registryState.screenId) || "").trim();
+  if (!newName) return;
+  await apiRequest(`/api/screens/${encodeURIComponent(registryState.screenId)}?${contextQuery()}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: newName }),
+  });
+  await hydrateScreens();
+}
+
+async function onToggleScreenStatus() {
+  if (!registryState.screenId) return;
+  const screens = (await apiRequest(`/api/screens?${contextQuery()}&include_deleted=1`)).items || [];
+  const selected = screens.find((item) => item.screen_id === registryState.screenId);
+  if (!selected) return;
+  const nextStatus = selected.status === "inactive" ? "active" : "inactive";
+  await apiRequest(`/api/screens/${encodeURIComponent(registryState.screenId)}/status?${contextQuery()}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: nextStatus }),
+  });
+  await hydrateScreens();
+}
+
+async function onDeleteScreen() {
+  if (!registryState.screenId) return;
+  await apiRequest(`/api/screens/${encodeURIComponent(registryState.screenId)}/status?${contextQuery()}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "deleted" }),
+  });
+  registryState.screenId = "";
+  await hydrateScreens();
+}
+
+async function onSaveScreen() {
+  if (!registryState.screenId) return;
+  try {
+    await apiRequest(`/api/screens/${encodeURIComponent(registryState.screenId)}?${contextQuery()}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content_raw: editor.value }),
+    });
+    setUnsavedChanges(false);
+    appendAction(`[${t("systemLabel")}] ${t("contextSaved")} ${registryState.screenId}`);
+    await hydrateScreens();
+  } catch {
+    appendAction(`[${t("systemLabel")}] ${t("contextSaveError")}`);
+  }
+}
+
+async function onPublishVersion() {
+  if (!registryState.projectId || !registryState.contractId || !registryState.versionId) return;
+  try {
+    const result = await apiRequest("/api/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project_id: registryState.projectId,
+        contract_id: registryState.contractId,
+        version_id: registryState.versionId,
+      }),
+    });
+    appendAction(`[${t("systemLabel")}] ${t("contextPublished")} ${result.pub_id || ""}`);
+  } catch (error) {
+    appendAction(`[${t("systemLabel")}] ${t("contextPublishError")} ${error.message || ""}`);
+  }
 }
 
 function renderComponentPalette() {
@@ -1154,6 +1601,37 @@ function normalizeFileName(name) {
 }
 
 async function onLoadClick() {
+  const applyLoadedTemplate = async (text, fileName) => {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      appendAction(`[${t("systemLabel")}] ${t("fileLoadError")}`);
+      return;
+    }
+
+    editor.value = formatSchema(parsed);
+    persistEditorSchema(editor.value);
+
+    if (registryState.projectId && registryState.contractId && registryState.versionId && registryState.screenId) {
+      await apiRequest(`/api/screens/${encodeURIComponent(registryState.screenId)}?${contextQuery()}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content_json: parsed }),
+      });
+      setUnsavedChanges(false);
+      await renderSchema(editor.value);
+      appendAction(`[${t("systemLabel")}] ${t("fileLoaded")} ${fileName}`);
+      appendAction(`[${t("systemLabel")}] ${t("contextSaved")} ${registryState.screenId}`);
+      await hydrateScreens();
+      return;
+    }
+
+    setUnsavedChanges(true);
+    await renderSchema(editor.value);
+    appendAction(`[${t("systemLabel")}] ${t("fileLoaded")} ${fileName}`);
+  };
+
   try {
     if (window.showOpenFilePicker) {
       const [handle] = await window.showOpenFilePicker({
@@ -1167,14 +1645,10 @@ async function onLoadClick() {
       });
       const file = await handle.getFile();
       const text = await file.text();
-      editor.value = text;
       currentFileHandle = handle;
       currentFileName = file.name || handle.name || "";
-      persistEditorSchema(editor.value);
-      setUnsavedChanges(false);
       updateEditorFileInfo();
-      await renderSchema(editor.value);
-      appendAction(`[${t("systemLabel")}] ${t("fileLoaded")} ${file.name}`);
+      await applyLoadedTemplate(text, file.name || currentFileName || "template.json");
       return;
     }
   } catch (error) {
@@ -1193,14 +1667,10 @@ async function onLoadClick() {
     }
     try {
       const text = await file.text();
-      editor.value = text;
       currentFileHandle = null;
       currentFileName = file.name || "";
-      persistEditorSchema(editor.value);
-      setUnsavedChanges(false);
       updateEditorFileInfo();
-      await renderSchema(editor.value);
-      appendAction(`[${t("systemLabel")}] ${t("fileLoaded")} ${file.name}`);
+      await applyLoadedTemplate(text, file.name || "template.json");
     } catch {
       appendAction(`[${t("systemLabel")}] ${t("fileLoadError")}`);
     }
@@ -1239,20 +1709,52 @@ function freezeWorkspacePanelWidths() {
         return;
       }
       panel.style.flex = "";
+      panel.style.minWidth = "";
     });
     return;
   }
 
-  [componentsCard, editorCard, previewCard].forEach((panel) => {
-    if (!panel) {
-      return;
+  const workspaceWidth = Math.round(workspace.getBoundingClientRect().width);
+  const splittersWidth = workspaceSplitters.reduce((sum, splitter) => sum + Math.round(splitter.getBoundingClientRect().width || 10), 0);
+  const availableWidth = Math.max(0, workspaceWidth - splittersWidth);
+
+  let componentsWidth = clamp(getPanelCurrentWidth(componentsCard), PANEL_LIMITS.componentsCard.min, PANEL_LIMITS.componentsCard.max);
+  let editorWidth = clamp(getPanelCurrentWidth(editorCard), PANEL_LIMITS.editorCard.min, PANEL_LIMITS.editorCard.max);
+  const previewMin = PANEL_LIMITS.previewCard.min;
+
+  const maxFixedWidth = Math.max(
+    PANEL_LIMITS.componentsCard.min + PANEL_LIMITS.editorCard.min,
+    availableWidth - previewMin,
+  );
+
+  if (componentsWidth + editorWidth > maxFixedWidth) {
+    const overflow = componentsWidth + editorWidth - maxFixedWidth;
+    const editorShrink = Math.min(overflow, editorWidth - PANEL_LIMITS.editorCard.min);
+    editorWidth -= editorShrink;
+    const remainingOverflow = overflow - editorShrink;
+    if (remainingOverflow > 0) {
+      componentsWidth = Math.max(PANEL_LIMITS.componentsCard.min, componentsWidth - remainingOverflow);
     }
-    if (panel.style.flex) {
-      return;
-    }
-    const width = Math.round(panel.getBoundingClientRect().width);
-    panel.style.flex = `0 0 ${width}px`;
-  });
+  }
+
+  setPanelWidth(componentsCard, componentsWidth);
+  setPanelWidth(editorCard, editorWidth);
+  previewCard.style.flex = "1 1 auto";
+  previewCard.style.minWidth = "0";
+}
+
+function getPanelCurrentWidth(panel) {
+  if (!panel) {
+    return 0;
+  }
+
+  const inlineFlex = panel.style.flex || "";
+  const match = inlineFlex.match(/0\\s+0\\s+([0-9.]+)px/);
+  if (match) {
+    return Number(match[1]);
+  }
+
+  return Math.round(panel.getBoundingClientRect().width);
 }
 
 function onSplitterPointerDown(event, splitter) {
