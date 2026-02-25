@@ -29,6 +29,7 @@ Where:
 - `text.js`
 - `button.js`
 - `iconbutton.js`
+- `navbar.js`
 - `spacer.js`
 - `input.js`
 

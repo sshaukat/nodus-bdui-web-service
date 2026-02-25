@@ -6,6 +6,7 @@ import { basicSetup } from "https://esm.sh/codemirror";
 const LOCALE_KEY = "nodus.locale";
 const THEME_KEY = "nodus.theme";
 const LAST_SCHEMA_KEY = "nodus.lastSchema";
+const COMPONENT_LIBRARY_KEY = "nodus.componentLibrary";
 const SUPPORTED_LOCALES = ["ru", "en"];
 const SUPPORTED_THEMES = ["light", "dark"];
 const THEME_ICONS = {
@@ -24,6 +25,61 @@ const FORM_SCHEMA_TEMPLATE = {
     },
   },
   children: [],
+};
+const NAVBAR_TEMPLATE = {
+  type: "row",
+  id: "navbar_main",
+  justify: "space-between",
+  wrap: "nowrap",
+  layout: {
+    padding: {
+      top: 12,
+      right: 16,
+      bottom: 12,
+      left: 16,
+    },
+  },
+  children: [
+    {
+      type: "iconbutton",
+      id: "navbar_back",
+      icon: "arrow-left",
+      title: "Назад",
+      action: {
+        type: "navigate",
+        route: "back",
+      },
+    },
+    {
+      type: "text",
+      id: "navbar_title",
+      value: "Сбор денег",
+      layout: {
+        weight: 1,
+        alignment: "center",
+      },
+    },
+    {
+      type: "iconbutton",
+      id: "navbar_action",
+      icon: "settings",
+      title: "Действие",
+      action: {
+        type: "log",
+        value: "navbar action button",
+      },
+    },
+    {
+      type: "iconbutton",
+      id: "navbar_menu",
+      icon: "menu",
+      title: "Меню",
+      action: {
+        type: "log",
+        value: "navbar menu tapped",
+      },
+    },
+  ],
 };
 
 const I18N = {
@@ -46,6 +102,32 @@ const I18N = {
     componentsTitle: "Каталог компонентов",
     componentsChip: "быстрая сборка",
     componentAddBtn: "Добавить",
+    componentNewBtn: "Новый",
+    componentEditBtn: "Редактировать",
+    componentDeleteBtn: "Удалить",
+    componentEditorTitle: "Редактор компонента",
+    componentEditorTitleCreate: "Новый компонент",
+    componentEditorTitleEdit: "Редактор компонента",
+    componentFieldType: "Type",
+    componentFieldMode: "Режим",
+    componentModeInsert: "Вставка",
+    componentModeReplace: "Заменить схему",
+    componentFieldTitleRu: "Название (RU)",
+    componentFieldTitleEn: "Название (EN)",
+    componentFieldDescRu: "Описание (RU)",
+    componentFieldDescEn: "Описание (EN)",
+    componentFieldFieldsRu: "Поля (RU)",
+    componentFieldFieldsEn: "Поля (EN)",
+    componentFieldTemplate: "Template JSON",
+    componentSaveErrorType: "невозможно сохранить компоненту: поле type пустое",
+    componentSaveErrorJson: "невозможно сохранить компоненту: template JSON невалиден",
+    componentSaved: "компонента сохранена:",
+    componentCreated: "компонента создана:",
+    componentDeleted: "компонента удалена:",
+    componentDeleteConfirm: "Удалить компоненту {type}?",
+    componentReplaceSchemaConfirm:
+      "Текущая схема будет удалена и заменена на компонент {type}. Продолжить?",
+    cancelBtn: "Отмена",
     componentDetailsSummary: "JSON шаблон и поля",
     componentInsertError: "нельзя добавить компонент: JSON в редакторе невалиден",
     componentInsertSuccess: "компонент добавлен:",
@@ -120,6 +202,32 @@ const I18N = {
     componentsTitle: "Component Library",
     componentsChip: "faster assembly",
     componentAddBtn: "Add",
+    componentNewBtn: "New",
+    componentEditBtn: "Edit",
+    componentDeleteBtn: "Delete",
+    componentEditorTitle: "Component editor",
+    componentEditorTitleCreate: "New component",
+    componentEditorTitleEdit: "Component editor",
+    componentFieldType: "Type",
+    componentFieldMode: "Mode",
+    componentModeInsert: "Insert",
+    componentModeReplace: "Replace schema",
+    componentFieldTitleRu: "Title (RU)",
+    componentFieldTitleEn: "Title (EN)",
+    componentFieldDescRu: "Description (RU)",
+    componentFieldDescEn: "Description (EN)",
+    componentFieldFieldsRu: "Fields (RU)",
+    componentFieldFieldsEn: "Fields (EN)",
+    componentFieldTemplate: "Template JSON",
+    componentSaveErrorType: "cannot save component: type is empty",
+    componentSaveErrorJson: "cannot save component: template JSON is invalid",
+    componentSaved: "component saved:",
+    componentCreated: "component created:",
+    componentDeleted: "component deleted:",
+    componentDeleteConfirm: "Delete component {type}?",
+    componentReplaceSchemaConfirm:
+      "The current schema will be removed and replaced with component {type}. Continue?",
+    cancelBtn: "Cancel",
     componentDetailsSummary: "JSON template and fields",
     componentInsertError: "cannot add component: editor JSON is invalid",
     componentInsertSuccess: "component added:",
@@ -206,6 +314,21 @@ const componentsCard = document.getElementById("componentsCard");
 const editorCard = document.getElementById("editorCard");
 const previewCard = document.getElementById("previewCard");
 const componentPaletteList = document.getElementById("componentPaletteList");
+const newComponentBtn = document.getElementById("newComponentBtn");
+const componentEditorModal = document.getElementById("componentEditorModal");
+const componentEditorTitle = document.getElementById("componentEditorTitle");
+const componentEditorCloseBtn = document.getElementById("componentEditorCloseBtn");
+const componentEditorForm = document.getElementById("componentEditorForm");
+const componentEditorCancelBtn = document.getElementById("componentEditorCancelBtn");
+const componentFieldType = document.getElementById("componentFieldType");
+const componentFieldMode = document.getElementById("componentFieldMode");
+const componentFieldTitleRu = document.getElementById("componentFieldTitleRu");
+const componentFieldTitleEn = document.getElementById("componentFieldTitleEn");
+const componentFieldDescRu = document.getElementById("componentFieldDescRu");
+const componentFieldDescEn = document.getElementById("componentFieldDescEn");
+const componentFieldFieldsRu = document.getElementById("componentFieldFieldsRu");
+const componentFieldFieldsEn = document.getElementById("componentFieldFieldsEn");
+const componentFieldTemplate = document.getElementById("componentFieldTemplate");
 const previewRoot = document.getElementById("previewRoot");
 const errorsList = document.getElementById("errorsList");
 const actionList = document.getElementById("actionList");
@@ -259,7 +382,7 @@ const registryState = {
   versionId: "",
   screenId: "",
 };
-const COMPONENT_LIBRARY = [
+const DEFAULT_COMPONENT_LIBRARY = [
   {
     type: "form",
     title: { ru: "Форма", en: "Form" },
@@ -272,6 +395,19 @@ const COMPONENT_LIBRARY = [
     fields: {
       ru: "type: column; id: form; layout.padding: базовые отступы; children: сюда добавляются компоненты.",
       en: "type: column; id: form; layout.padding: base spacing; children: add components here.",
+    },
+  },
+  {
+    type: "navbar",
+    title: { ru: "NavBar", en: "NavBar" },
+    description: {
+      ru: "Верхняя панель: кнопка назад, заголовок и кнопка справа.",
+      en: "Top bar: back button, centered title, and right-side action.",
+    },
+    template: NAVBAR_TEMPLATE,
+    fields: {
+      ru: "children[0].icon: arrow-left; children[1].value: заголовок; children[2].icon: правая иконка.",
+      en: "children[0].icon: arrow-left; children[1].value: title; children[2].icon: right icon.",
     },
   },
   {
@@ -430,6 +566,8 @@ const COMPONENT_LIBRARY = [
     },
   },
 ];
+let componentLibrary = loadComponentLibrary();
+let componentEditIndex = null;
 
 loadBtn.addEventListener("click", onLoadClick);
 renderBtn.addEventListener("click", () => renderSchema(editor.value));
@@ -451,6 +589,15 @@ toggleScreenStatusBtn.addEventListener("click", onToggleScreenStatus);
 deleteScreenBtn.addEventListener("click", onDeleteScreen);
 saveScreenBtn.addEventListener("click", onSaveScreen);
 publishVersionBtn.addEventListener("click", onPublishVersion);
+newComponentBtn.addEventListener("click", () => openComponentEditor(null));
+componentEditorCloseBtn.addEventListener("click", closeComponentEditor);
+componentEditorCancelBtn.addEventListener("click", closeComponentEditor);
+componentEditorForm.addEventListener("submit", onSaveComponentEditor);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !componentEditorModal.classList.contains("is-hidden")) {
+    closeComponentEditor();
+  }
+});
 
 initializeApp();
 
@@ -494,6 +641,9 @@ function setLocale(locale, options = {}) {
   themeToggleBtn.setAttribute("aria-label", t("themeToggleAria"));
   themeToggleBtn.setAttribute("title", t("themeToggleAria"));
   renderComponentPalette();
+  if (!componentEditorModal.classList.contains("is-hidden")) {
+    componentEditorTitle.textContent = t(componentEditIndex === null ? "componentEditorTitleCreate" : "componentEditorTitleEdit");
+  }
   updateEditorFileInfo();
   updateSaveButtonState();
   updateContextInfo();
@@ -1006,7 +1156,7 @@ function renderComponentPalette() {
 
   componentPaletteList.innerHTML = "";
 
-  COMPONENT_LIBRARY.forEach((item) => {
+  componentLibrary.forEach((item, index) => {
     const card = document.createElement("article");
     card.className = "component-item";
 
@@ -1024,16 +1174,40 @@ function renderComponentPalette() {
     description.className = "component-item-desc";
     description.textContent = localize(item.description);
 
+    const actions = document.createElement("div");
+    actions.className = "component-item-actions";
+
     const addButton = document.createElement("button");
     addButton.type = "button";
-    addButton.className = "btn btn-ghost component-add-btn";
-    addButton.textContent = t("componentAddBtn");
+    addButton.className = "btn btn-ghost component-add-btn component-action-icon";
+    addButton.textContent = "+";
+    addButton.setAttribute("aria-label", t("componentAddBtn"));
+    addButton.setAttribute("title", t("componentAddBtn"));
     addButton.addEventListener("click", () => onAddComponent(item));
+
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.className = "btn btn-ghost component-add-btn component-action-icon";
+    editButton.textContent = "✎";
+    editButton.setAttribute("aria-label", t("componentEditBtn"));
+    editButton.setAttribute("title", t("componentEditBtn"));
+    editButton.addEventListener("click", () => openComponentEditor(index));
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "btn btn-ghost component-add-btn component-action-icon";
+    deleteButton.textContent = "×";
+    deleteButton.setAttribute("aria-label", t("componentDeleteBtn"));
+    deleteButton.setAttribute("title", t("componentDeleteBtn"));
+    deleteButton.addEventListener("click", () => onDeleteComponent(index));
 
     titleWrap.appendChild(title);
     titleWrap.appendChild(description);
     top.appendChild(titleWrap);
-    top.appendChild(addButton);
+    actions.appendChild(addButton);
+    actions.appendChild(editButton);
+    actions.appendChild(deleteButton);
+    top.appendChild(actions);
 
     const details = document.createElement("details");
     details.className = "component-details";
@@ -1057,6 +1231,209 @@ function renderComponentPalette() {
     card.appendChild(details);
     componentPaletteList.appendChild(card);
   });
+}
+
+function loadComponentLibrary() {
+  const fallback = deepClone(DEFAULT_COMPONENT_LIBRARY);
+  const raw = localStorage.getItem(COMPONENT_LIBRARY_KEY);
+  if (!raw) {
+    return fallback;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return fallback;
+    }
+    const normalized = parsed
+      .map((item) => normalizeComponentItem(item))
+      .filter(Boolean);
+    if (normalized.length === 0) {
+      return fallback;
+    }
+
+    const merged = appendMissingDefaultComponents(normalized);
+    if (merged.length !== normalized.length) {
+      localStorage.setItem(COMPONENT_LIBRARY_KEY, JSON.stringify(merged));
+    }
+    return merged;
+  } catch {
+    return fallback;
+  }
+}
+
+function appendMissingDefaultComponents(existing) {
+  const existingTypes = new Set(
+    existing
+      .map((item) => String(item?.type || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+
+  const missingDefaults = DEFAULT_COMPONENT_LIBRARY
+    .map((item) => normalizeComponentItem(item))
+    .filter((item) => item && !existingTypes.has(item.type.toLowerCase()));
+
+  return existing.concat(missingDefaults);
+}
+
+function saveComponentLibrary() {
+  localStorage.setItem(COMPONENT_LIBRARY_KEY, JSON.stringify(componentLibrary));
+}
+
+function normalizeComponentItem(item) {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+  const type = String(item.type || "").trim();
+  if (!type) {
+    return null;
+  }
+
+  const mode = item.mode === "replace-schema" ? "replace-schema" : undefined;
+  const normalizedTemplate = resolveTemplateForType(type, item.template);
+  return {
+    type,
+    title: normalizeLocaleObject(item.title, type),
+    description: normalizeLocaleObject(item.description, type),
+    template: normalizedTemplate,
+    mode,
+    fields: normalizeLocaleObject(item.fields, ""),
+  };
+}
+
+function resolveTemplateForType(type, template) {
+  const normalizedType = type.toLowerCase();
+  if (typeof template === "undefined") {
+    return deepClone(getDefaultTemplateByType(normalizedType));
+  }
+
+  if (
+    normalizedType === "navbar" &&
+    (template === null || template === "" || isEmptyPlainObject(template))
+  ) {
+    return deepClone(NAVBAR_TEMPLATE);
+  }
+
+  return deepClone(template);
+}
+
+function getDefaultTemplateByType(type) {
+  if (type === "navbar") {
+    return NAVBAR_TEMPLATE;
+  }
+  return {};
+}
+
+function isEmptyPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0;
+}
+
+function normalizeLocaleObject(value, fallback) {
+  if (value && typeof value === "object") {
+    return {
+      ru: String(value.ru || fallback || "").trim(),
+      en: String(value.en || fallback || "").trim(),
+    };
+  }
+
+  const text = String(value || fallback || "").trim();
+  return { ru: text, en: text };
+}
+
+function openComponentEditor(index) {
+  componentEditIndex = Number.isInteger(index) ? index : null;
+  const source =
+    componentEditIndex !== null && componentLibrary[componentEditIndex]
+      ? componentLibrary[componentEditIndex]
+      : {
+          type: "",
+          mode: undefined,
+          title: { ru: "", en: "" },
+          description: { ru: "", en: "" },
+          fields: { ru: "", en: "" },
+          template: {},
+        };
+
+  componentFieldType.value = source.type || "";
+  componentFieldMode.value = source.mode === "replace-schema" ? "replace-schema" : "";
+  componentFieldTitleRu.value = source.title?.ru || "";
+  componentFieldTitleEn.value = source.title?.en || "";
+  componentFieldDescRu.value = source.description?.ru || "";
+  componentFieldDescEn.value = source.description?.en || "";
+  componentFieldFieldsRu.value = source.fields?.ru || "";
+  componentFieldFieldsEn.value = source.fields?.en || "";
+  componentFieldTemplate.value = JSON.stringify(source.template ?? {}, null, 2);
+  componentEditorTitle.textContent = t(componentEditIndex === null ? "componentEditorTitleCreate" : "componentEditorTitleEdit");
+
+  componentEditorModal.classList.remove("is-hidden");
+  componentEditorModal.setAttribute("aria-hidden", "false");
+  componentFieldType.focus();
+}
+
+function closeComponentEditor() {
+  componentEditorModal.classList.add("is-hidden");
+  componentEditorModal.setAttribute("aria-hidden", "true");
+  componentEditIndex = null;
+}
+
+function onSaveComponentEditor(event) {
+  event.preventDefault();
+
+  const type = componentFieldType.value.trim();
+  if (!type) {
+    appendAction(`[${t("systemLabel")}] ${t("componentSaveErrorType")}`);
+    return;
+  }
+
+  let template;
+  try {
+    template = JSON.parse(componentFieldTemplate.value);
+  } catch {
+    appendAction(`[${t("systemLabel")}] ${t("componentSaveErrorJson")}`);
+    return;
+  }
+
+  const nextItem = normalizeComponentItem({
+    type,
+    mode: componentFieldMode.value === "replace-schema" ? "replace-schema" : undefined,
+    title: { ru: componentFieldTitleRu.value.trim(), en: componentFieldTitleEn.value.trim() },
+    description: { ru: componentFieldDescRu.value.trim(), en: componentFieldDescEn.value.trim() },
+    fields: { ru: componentFieldFieldsRu.value.trim(), en: componentFieldFieldsEn.value.trim() },
+    template,
+  });
+  if (!nextItem) {
+    appendAction(`[${t("systemLabel")}] ${t("componentSaveErrorType")}`);
+    return;
+  }
+
+  const isEdit = componentEditIndex !== null;
+  if (isEdit) {
+    componentLibrary[componentEditIndex] = nextItem;
+  } else {
+    componentLibrary.push(nextItem);
+  }
+
+  saveComponentLibrary();
+  renderComponentPalette();
+  closeComponentEditor();
+  appendAction(
+    `[${t("systemLabel")}] ${t(isEdit ? "componentSaved" : "componentCreated")} ${nextItem.type}`,
+  );
+}
+
+function onDeleteComponent(index) {
+  const item = componentLibrary[index];
+  if (!item) {
+    return;
+  }
+  const confirmMessage = t("componentDeleteConfirm").replace("{type}", item.type);
+  if (!window.confirm(confirmMessage)) {
+    return;
+  }
+  componentLibrary.splice(index, 1);
+  saveComponentLibrary();
+  renderComponentPalette();
+  appendAction(`[${t("systemLabel")}] ${t("componentDeleted")} ${item.type}`);
 }
 
 function localize(content) {
@@ -1098,6 +1475,10 @@ function formatFieldDescription(text) {
 
 async function onAddComponent(item) {
   if (item.mode === "replace-schema") {
+    const confirmMessage = t("componentReplaceSchemaConfirm").replace("{type}", item.type || localize(item.title));
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
     editor.value = formatSchema(item.template);
     persistEditorSchema(editor.value);
     setUnsavedChanges(true);
