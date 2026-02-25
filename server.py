@@ -312,8 +312,12 @@ class BduiRuntime:
 
         if action_type == "navigate":
             route = action.get("route")
-            if not isinstance(route, str) or not route.startswith("/"):
-                errors.append({"path": path, "message": "navigate action field 'route' must start with '/'"})
+            normalized_route = route.strip() if isinstance(route, str) else ""
+            if not normalized_route:
+                errors.append({"path": path, "message": "navigate action field 'route' is required"})
+                return
+            if normalized_route != "back" and not normalized_route.startswith("/"):
+                errors.append({"path": path, "message": "navigate action field 'route' must be '/path' or 'back'"})
 
     @staticmethod
     def _to_float(value: Any, fallback: float) -> float:
@@ -329,7 +333,9 @@ class RegistryStorage:
     def __init__(self, base_dir: Path):
         self.base_dir = base_dir
         self.projects_dir = self.base_dir / "projects"
+        self.components_dir = self.base_dir / "components"
         self.projects_dir.mkdir(parents=True, exist_ok=True)
+        self.components_dir.mkdir(parents=True, exist_ok=True)
         self.cleanup_old_publications()
 
     @staticmethod
@@ -403,6 +409,109 @@ class RegistryStorage:
         path = self._version_meta_path(project_id, contract_id, version_id)
         if not path.exists():
             raise ApiError(HTTPStatus.NOT_FOUND, f"Version not found: {project_id}/{contract_id}/{version_id}")
+
+    def _component_file(self, component_type: str) -> Path:
+        ctype = self._validate_slug(component_type, "component_type")
+        return self.components_dir / f"{ctype}.json"
+
+    @staticmethod
+    def _normalize_locale_field(value: Any, fallback: str = "") -> dict[str, str]:
+        if isinstance(value, dict):
+            ru = str(value.get("ru") or fallback).strip()
+            en = str(value.get("en") or fallback).strip()
+            return {"ru": ru, "en": en}
+        text = str(value or fallback).strip()
+        return {"ru": text, "en": text}
+
+    def _normalize_component_payload(
+        self,
+        payload: dict[str, Any],
+        component_type: str | None = None,
+    ) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ApiError(HTTPStatus.BAD_REQUEST, "Component payload must be an object")
+
+        raw_type = component_type if component_type is not None else payload.get("type")
+        ctype = self._validate_slug(str(raw_type or ""), "component_type")
+
+        mode_value = payload.get("mode")
+        mode: str | None = None
+        if isinstance(mode_value, str) and mode_value.strip():
+            normalized_mode = mode_value.strip().lower()
+            if normalized_mode != "replace-schema":
+                raise ApiError(HTTPStatus.BAD_REQUEST, "component mode must be replace-schema")
+            mode = "replace-schema"
+
+        template = payload.get("template", {})
+        if template is None:
+            template = {}
+
+        result: dict[str, Any] = {
+            "type": ctype,
+            "title": self._normalize_locale_field(payload.get("title"), ctype),
+            "description": self._normalize_locale_field(payload.get("description"), ctype),
+            "fields": self._normalize_locale_field(payload.get("fields"), ""),
+            "template": template,
+        }
+        if mode:
+            result["mode"] = mode
+        return result
+
+    def list_components(self) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for component_file in sorted(self.components_dir.glob("*.json")):
+            payload = self._load_json(component_file, {})
+            if not isinstance(payload, dict):
+                continue
+            try:
+                normalized = self._normalize_component_payload(payload, component_type=component_file.stem)
+            except ApiError:
+                continue
+
+            created_at = payload.get("created_at")
+            updated_at = payload.get("updated_at")
+            if created_at:
+                normalized["created_at"] = created_at
+            if updated_at:
+                normalized["updated_at"] = updated_at
+            items.append(normalized)
+        return items
+
+    def create_component(self, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized = self._normalize_component_payload(payload)
+        path = self._component_file(str(normalized.get("type") or ""))
+        if path.exists():
+            raise ApiError(HTTPStatus.CONFLICT, f"Component already exists: {normalized['type']}")
+
+        now = self._now_iso()
+        normalized["created_at"] = now
+        normalized["updated_at"] = now
+        self._dump_json(path, normalized)
+        return normalized
+
+    def upsert_component(self, component_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+        path = self._component_file(component_type)
+        existing = self._load_json(path, {}) if path.exists() else {}
+        merged: dict[str, Any] = {}
+        if isinstance(existing, dict):
+            merged.update(existing)
+        if isinstance(payload, dict):
+            merged.update(payload)
+        merged["type"] = path.stem
+
+        normalized = self._normalize_component_payload(merged, component_type=path.stem)
+        now = self._now_iso()
+        normalized["created_at"] = str(existing.get("created_at") or now) if isinstance(existing, dict) else now
+        normalized["updated_at"] = now
+        self._dump_json(path, normalized)
+        return normalized
+
+    def delete_component(self, component_type: str) -> dict[str, Any]:
+        path = self._component_file(component_type)
+        if not path.exists():
+            raise ApiError(HTTPStatus.NOT_FOUND, f"Component not found: {path.stem}")
+        path.unlink(missing_ok=True)
+        return {"type": path.stem, "deleted": True}
 
     def list_projects(self) -> list[dict[str, Any]]:
         projects: list[dict[str, Any]] = []
@@ -942,6 +1051,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == "/api/components":
+            self._json_response(HTTPStatus.OK, {"items": storage.list_components()})
+            return
+
         if path == "/schemas":
             project_id = self._optional_query(query, "project")
             contract_id = self._optional_query(query, "contract")
@@ -1024,6 +1137,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._json_response(HTTPStatus.CREATED, storage.create_screen(payload))
                 return
 
+            if path == "/api/components":
+                self._json_response(HTTPStatus.CREATED, storage.create_component(payload))
+                return
+
             if path == "/api/publish":
                 self._json_response(HTTPStatus.OK, storage.publish_version(payload))
                 return
@@ -1039,6 +1156,18 @@ class RequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query)
+
+        if path.startswith("/api/components/"):
+            component_type = path.split("/")[-1]
+            try:
+                payload = self._read_json_body()
+                updated = storage.upsert_component(component_type, payload)
+                self._json_response(HTTPStatus.OK, updated)
+            except ApiError as exc:
+                self._json_response(exc.status, {"error": exc.message})
+            except json.JSONDecodeError as exc:
+                self._json_response(HTTPStatus.BAD_REQUEST, {"error": f"Invalid JSON body: {exc}"})
+            return
 
         if not path.startswith("/api/screens/"):
             self._json_response(HTTPStatus.NOT_FOUND, {"error": "Not found"})
@@ -1056,6 +1185,20 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._json_response(exc.status, {"error": exc.message})
         except json.JSONDecodeError as exc:
             self._json_response(HTTPStatus.BAD_REQUEST, {"error": f"Invalid JSON body: {exc}"})
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path.startswith("/api/components/"):
+            component_type = path.split("/")[-1]
+            try:
+                self._json_response(HTTPStatus.OK, storage.delete_component(component_type))
+            except ApiError as exc:
+                self._json_response(exc.status, {"error": exc.message})
+            return
+
+        self._json_response(HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
     def do_PATCH(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)

@@ -124,6 +124,9 @@ const I18N = {
     componentSaved: "компонента сохранена:",
     componentCreated: "компонента создана:",
     componentDeleted: "компонента удалена:",
+    componentSaveServerError: "ошибка сохранения компонента:",
+    componentDeleteServerError: "ошибка удаления компонента:",
+    componentStorageFallback: "сервер компонентов недоступен, используется локальный кэш",
     componentDeleteConfirm: "Удалить компоненту {type}?",
     componentReplaceSchemaConfirm:
       "Текущая схема будет удалена и заменена на компонент {type}. Продолжить?",
@@ -224,6 +227,9 @@ const I18N = {
     componentSaved: "component saved:",
     componentCreated: "component created:",
     componentDeleted: "component deleted:",
+    componentSaveServerError: "component save error:",
+    componentDeleteServerError: "component delete error:",
+    componentStorageFallback: "component server unavailable, local cache is used",
     componentDeleteConfirm: "Delete component {type}?",
     componentReplaceSchemaConfirm:
       "The current schema will be removed and replaced with component {type}. Continue?",
@@ -566,7 +572,7 @@ const DEFAULT_COMPONENT_LIBRARY = [
     },
   },
 ];
-let componentLibrary = loadComponentLibrary();
+let componentLibrary = deepClone(DEFAULT_COMPONENT_LIBRARY);
 let componentEditIndex = null;
 let componentTemplateEditorView = null;
 const componentTemplateEditor = {
@@ -705,6 +711,7 @@ async function initializeApp() {
   initializeComponentTemplateEditor();
   await ensureInitialRegistry();
   await hydrateRegistrySelectors();
+  await hydrateComponentLibrary();
   renderComponentPalette();
   initializeWorkspaceSplitters();
   setTheme(currentTheme);
@@ -1270,7 +1277,7 @@ function renderComponentPalette() {
   });
 }
 
-function loadComponentLibrary() {
+function loadComponentLibraryCache() {
   const fallback = deepClone(DEFAULT_COMPONENT_LIBRARY);
   const raw = localStorage.getItem(COMPONENT_LIBRARY_KEY);
   if (!raw) {
@@ -1313,8 +1320,73 @@ function appendMissingDefaultComponents(existing) {
   return existing.concat(missingDefaults);
 }
 
-function saveComponentLibrary() {
+function saveComponentLibraryCache() {
   localStorage.setItem(COMPONENT_LIBRARY_KEY, JSON.stringify(componentLibrary));
+}
+
+async function hydrateComponentLibrary() {
+  const cachedLibrary = loadComponentLibraryCache();
+  componentLibrary = cachedLibrary;
+  try {
+    const remoteLibrary = await fetchComponentLibraryFromServer();
+    const baseLibrary =
+      remoteLibrary.length === 0 && cachedLibrary.length > 0 ? cachedLibrary : remoteLibrary;
+    const mergedLibrary = appendMissingDefaultComponents(baseLibrary);
+    const missingDefaults = collectMissingComponents(remoteLibrary, mergedLibrary);
+
+    for (const item of missingDefaults) {
+      await upsertComponentOnServer(item);
+    }
+
+    componentLibrary = mergedLibrary;
+    saveComponentLibraryCache();
+  } catch (error) {
+    componentLibrary = appendMissingDefaultComponents(componentLibrary);
+    saveComponentLibraryCache();
+    appendAction(
+      `[${t("systemLabel")}] ${t("componentStorageFallback")} ${error?.message || ""}`.trim(),
+    );
+  }
+}
+
+function collectMissingComponents(baseItems, mergedItems) {
+  const baseTypes = new Set(
+    baseItems
+      .map((item) => String(item?.type || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return mergedItems.filter((item) => !baseTypes.has(String(item.type || "").toLowerCase()));
+}
+
+async function fetchComponentLibraryFromServer() {
+  const response = await apiRequest("/api/components");
+  const items = Array.isArray(response.items) ? response.items : [];
+  const normalized = items
+    .map((item) => normalizeComponentItem(item))
+    .filter(Boolean);
+  return normalized;
+}
+
+async function upsertComponentOnServer(item) {
+  const type = String(item?.type || "").trim().toLowerCase();
+  if (!type) {
+    throw new Error("component type is empty");
+  }
+  return apiRequest(`/api/components/${encodeURIComponent(type)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(item),
+  });
+}
+
+async function deleteComponentFromServer(type) {
+  const normalizedType = String(type || "").trim().toLowerCase();
+  if (!normalizedType) {
+    throw new Error("component type is empty");
+  }
+  return apiRequest(`/api/components/${encodeURIComponent(normalizedType)}`, {
+    method: "DELETE",
+  });
 }
 
 function normalizeComponentItem(item) {
@@ -1413,7 +1485,7 @@ function closeComponentEditor() {
   componentEditIndex = null;
 }
 
-function onSaveComponentEditor(event) {
+async function onSaveComponentEditor(event) {
   event.preventDefault();
 
   const type = componentFieldType.value.trim();
@@ -1444,21 +1516,36 @@ function onSaveComponentEditor(event) {
   }
 
   const isEdit = componentEditIndex !== null;
-  if (isEdit) {
-    componentLibrary[componentEditIndex] = nextItem;
-  } else {
-    componentLibrary.push(nextItem);
+  const previousItem = isEdit ? componentLibrary[componentEditIndex] : null;
+  let savedType = nextItem.type;
+
+  try {
+    const persisted = normalizeComponentItem(await upsertComponentOnServer(nextItem)) || nextItem;
+    savedType = persisted.type;
+    if (isEdit) {
+      componentLibrary[componentEditIndex] = persisted;
+      const previousType = String(previousItem?.type || "").trim().toLowerCase();
+      const nextType = String(persisted.type || "").trim().toLowerCase();
+      if (previousType && previousType !== nextType) {
+        await deleteComponentFromServer(previousType);
+      }
+    } else {
+      componentLibrary.push(persisted);
+    }
+  } catch (error) {
+    appendAction(`[${t("systemLabel")}] ${t("componentSaveServerError")} ${error?.message || ""}`.trim());
+    return;
   }
 
-  saveComponentLibrary();
+  saveComponentLibraryCache();
   renderComponentPalette();
   closeComponentEditor();
   appendAction(
-    `[${t("systemLabel")}] ${t(isEdit ? "componentSaved" : "componentCreated")} ${nextItem.type}`,
+    `[${t("systemLabel")}] ${t(isEdit ? "componentSaved" : "componentCreated")} ${savedType}`,
   );
 }
 
-function onDeleteComponent(index) {
+async function onDeleteComponent(index) {
   const item = componentLibrary[index];
   if (!item) {
     return;
@@ -1467,8 +1554,14 @@ function onDeleteComponent(index) {
   if (!window.confirm(confirmMessage)) {
     return;
   }
+  try {
+    await deleteComponentFromServer(item.type);
+  } catch (error) {
+    appendAction(`[${t("systemLabel")}] ${t("componentDeleteServerError")} ${error?.message || ""}`.trim());
+    return;
+  }
   componentLibrary.splice(index, 1);
-  saveComponentLibrary();
+  saveComponentLibraryCache();
   renderComponentPalette();
   appendAction(`[${t("systemLabel")}] ${t("componentDeleted")} ${item.type}`);
 }
