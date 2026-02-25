@@ -8,7 +8,7 @@ Nodus BDUI Web Service - это сервис и веб-песочница для
 
 Основной экран песочницы разделен на четыре рабочие области:
 - `Контекст контракта`: выбор `проект / контракт / версия / экран` и операции со схемой экрана.
-- `Каталог компонентов` слева: готовые шаблоны узлов и кнопка быстрого добавления в JSON.
+- `Каталог компонентов` слева: готовые шаблоны узлов, добавление в JSON, создание/редактирование/удаление компонентов.
 - `Редактор схемы` по центру: редактирование контракта экрана на базе CodeMirror 6 с форматированием и очисткой до базового шаблона формы.
 - `Предпросмотр` справа: live-рендер схемы, обновление runtime и визуальная проверка результата.
 
@@ -93,6 +93,25 @@ For background mode:
 - Open `JSON шаблон и поля / JSON template and fields` to inspect the exact JSON and field hints before inserting.
 - Save changes into current context with `Сохранить экран / Save Screen`.
 
+## Component Library: storage and editor
+
+- `Новый`, `✎`, `×` in `Каталог компонентов` open component CRUD flows.
+- Component editor supports full JSON editing via CodeMirror (`Template JSON` field).
+- Components are persisted on backend in files under `data/components/<type>.json`.
+- Frontend uses backend as source of truth (`/api/components`) and keeps `localStorage` cache as fallback.
+- On first load after update, local `localStorage` component catalog is migrated to backend if backend storage is empty.
+
+## Common node flags
+
+All node types support:
+
+- `visible: boolean` — hide/show node in preview (if `false`, node is not rendered).
+- `enabled: boolean` — disable node interactions in preview.
+
+Backward-compatibility:
+
+- typo alias `viible` is treated as `visible`.
+
 ## Endpoints
 
 - `GET /api/health`
@@ -108,6 +127,10 @@ For background mode:
 - `PUT /api/screens/<screen_id>?project_id=<id>&contract_id=<id>&version_id=<id>`
 - `PATCH /api/screens/<screen_id>/status?project_id=<id>&contract_id=<id>&version_id=<id>`
 - `POST /api/publish`
+- `GET /api/components`
+- `POST /api/components`
+- `PUT /api/components/<type>`
+- `DELETE /api/components/<type>`
 - `GET /schemas`
 - `GET /schema/<project>:<contract>:<version>:<screen>`
 - `GET /schema/<project>/<contract>/<version>/<screen>`

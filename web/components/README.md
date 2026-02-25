@@ -21,6 +21,12 @@ Where:
 - `ctx.t(key)` returns localized strings.
 - `ctx.inputState` is local state storage for inputs.
 
+Common node flags supported by runtime:
+
+- `visible: boolean` (if `false`, node is not rendered)
+- `enabled: boolean` (disabled visual/interaction state)
+- backward-compatible alias `viible` -> `visible`
+
 ## Current components
 
 - `column.js`
