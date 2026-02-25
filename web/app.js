@@ -328,7 +328,7 @@ const componentFieldDescRu = document.getElementById("componentFieldDescRu");
 const componentFieldDescEn = document.getElementById("componentFieldDescEn");
 const componentFieldFieldsRu = document.getElementById("componentFieldFieldsRu");
 const componentFieldFieldsEn = document.getElementById("componentFieldFieldsEn");
-const componentFieldTemplate = document.getElementById("componentFieldTemplate");
+const componentTemplateEditorContainer = document.getElementById("componentTemplateEditor");
 const previewRoot = document.getElementById("previewRoot");
 const errorsList = document.getElementById("errorsList");
 const actionList = document.getElementById("actionList");
@@ -568,6 +568,24 @@ const DEFAULT_COMPONENT_LIBRARY = [
 ];
 let componentLibrary = loadComponentLibrary();
 let componentEditIndex = null;
+let componentTemplateEditorView = null;
+const componentTemplateEditor = {
+  get value() {
+    return componentTemplateEditorView ? componentTemplateEditorView.state.doc.toString() : "";
+  },
+  set value(nextValue) {
+    if (!componentTemplateEditorView) {
+      return;
+    }
+    const current = componentTemplateEditorView.state.doc.toString();
+    if (nextValue === current) {
+      return;
+    }
+    componentTemplateEditorView.dispatch({
+      changes: { from: 0, to: componentTemplateEditorView.state.doc.length, insert: nextValue },
+    });
+  },
+};
 
 loadBtn.addEventListener("click", onLoadClick);
 renderBtn.addEventListener("click", () => renderSchema(editor.value));
@@ -590,7 +608,9 @@ deleteScreenBtn.addEventListener("click", onDeleteScreen);
 saveScreenBtn.addEventListener("click", onSaveScreen);
 publishVersionBtn.addEventListener("click", onPublishVersion);
 newComponentBtn.addEventListener("click", () => openComponentEditor(null));
-componentEditorCloseBtn.addEventListener("click", closeComponentEditor);
+if (componentEditorCloseBtn) {
+  componentEditorCloseBtn.addEventListener("click", closeComponentEditor);
+}
 componentEditorCancelBtn.addEventListener("click", closeComponentEditor);
 componentEditorForm.addEventListener("submit", onSaveComponentEditor);
 document.addEventListener("keydown", (event) => {
@@ -682,6 +702,7 @@ function t(key) {
 async function initializeApp() {
   const initialSchema = await loadInitialSchema();
   initializeEditor(initialSchema);
+  initializeComponentTemplateEditor();
   await ensureInitialRegistry();
   await hydrateRegistrySelectors();
   renderComponentPalette();
@@ -697,7 +718,48 @@ function initializeEditor(initialValue) {
     return;
   }
 
-  const editorTheme = EditorView.theme({
+  const renderDebounced = debounce(() => renderSchema(editor.value), 300);
+  const persistDebounced = debounce(() => {
+    persistEditorSchema(editor.value);
+    setUnsavedChanges(true);
+  }, 250);
+
+  editorView = new EditorView({
+    state: EditorState.create({
+      doc: initialValue,
+      extensions: [
+        basicSetup,
+        json(),
+        EditorView.lineWrapping,
+        createJsonEditorTheme(),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            renderDebounced();
+            persistDebounced();
+          }
+        }),
+      ],
+    }),
+    parent: editorContainer,
+  });
+}
+
+function initializeComponentTemplateEditor() {
+  if (!componentTemplateEditorContainer) {
+    return;
+  }
+
+  componentTemplateEditorView = new EditorView({
+    state: EditorState.create({
+      doc: "{}\n",
+      extensions: [basicSetup, json(), EditorView.lineWrapping, createJsonEditorTheme()],
+    }),
+    parent: componentTemplateEditorContainer,
+  });
+}
+
+function createJsonEditorTheme() {
+  return EditorView.theme({
     "&": {
       height: "100%",
       backgroundColor: "transparent",
@@ -719,31 +781,6 @@ function initializeEditor(initialValue) {
     ".cm-activeLine": {
       backgroundColor: "rgba(65, 199, 255, 0.06)",
     },
-  });
-
-  const renderDebounced = debounce(() => renderSchema(editor.value), 300);
-  const persistDebounced = debounce(() => {
-    persistEditorSchema(editor.value);
-    setUnsavedChanges(true);
-  }, 250);
-
-  editorView = new EditorView({
-    state: EditorState.create({
-      doc: initialValue,
-      extensions: [
-        basicSetup,
-        json(),
-        EditorView.lineWrapping,
-        editorTheme,
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            renderDebounced();
-            persistDebounced();
-          }
-        }),
-      ],
-    }),
-    parent: editorContainer,
   });
 }
 
@@ -1362,7 +1399,7 @@ function openComponentEditor(index) {
   componentFieldDescEn.value = source.description?.en || "";
   componentFieldFieldsRu.value = source.fields?.ru || "";
   componentFieldFieldsEn.value = source.fields?.en || "";
-  componentFieldTemplate.value = JSON.stringify(source.template ?? {}, null, 2);
+  componentTemplateEditor.value = `${JSON.stringify(source.template ?? {}, null, 2)}\n`;
   componentEditorTitle.textContent = t(componentEditIndex === null ? "componentEditorTitleCreate" : "componentEditorTitleEdit");
 
   componentEditorModal.classList.remove("is-hidden");
@@ -1387,7 +1424,7 @@ function onSaveComponentEditor(event) {
 
   let template;
   try {
-    template = JSON.parse(componentFieldTemplate.value);
+    template = JSON.parse(componentTemplateEditor.value);
   } catch {
     appendAction(`[${t("systemLabel")}] ${t("componentSaveErrorJson")}`);
     return;

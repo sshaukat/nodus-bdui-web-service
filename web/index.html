@@ -163,20 +163,21 @@
       <div class="modal-card">
         <div class="modal-head">
           <h3 id="componentEditorTitle" data-i18n="componentEditorTitle">Редактор компонента</h3>
-          <button id="componentEditorCloseBtn" class="btn btn-ghost modal-close-btn" type="button" aria-label="Close">x</button>
         </div>
         <form id="componentEditorForm" class="component-editor-form">
-          <label class="context-field">
-            <span data-i18n="componentFieldType">Type</span>
-            <input id="componentFieldType" type="text" required />
-          </label>
-          <label class="context-field">
-            <span data-i18n="componentFieldMode">Mode</span>
-            <select id="componentFieldMode">
-              <option value="" data-i18n="componentModeInsert">Вставка</option>
-              <option value="replace-schema" data-i18n="componentModeReplace">Заменить схему</option>
-            </select>
-          </label>
+          <div class="component-editor-grid component-editor-top-grid">
+            <label class="context-field">
+              <span data-i18n="componentFieldType">Type</span>
+              <input id="componentFieldType" type="text" required />
+            </label>
+            <label class="context-field">
+              <span data-i18n="componentFieldMode">Mode</span>
+              <select id="componentFieldMode">
+                <option value="" data-i18n="componentModeInsert">Вставка</option>
+                <option value="replace-schema" data-i18n="componentModeReplace">Заменить схему</option>
+              </select>
+            </label>
+          </div>
           <div class="component-editor-grid">
             <label class="context-field">
               <span data-i18n="componentFieldTitleRu">Title (RU)</span>
@@ -207,9 +208,9 @@
               <textarea id="componentFieldFieldsEn" rows="2"></textarea>
             </label>
           </div>
-          <label class="context-field">
+          <label class="context-field component-template-field">
             <span data-i18n="componentFieldTemplate">Template JSON</span>
-            <textarea id="componentFieldTemplate" rows="10" class="component-template-json" required></textarea>
+            <div id="componentTemplateEditor" class="component-template-editor" aria-label="Component template JSON editor"></div>
           </label>
           <div class="modal-actions">
             <button id="componentEditorCancelBtn" class="btn btn-ghost" type="button" data-i18n="cancelBtn">Отмена</button>
