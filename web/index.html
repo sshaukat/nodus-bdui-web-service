@@ -98,6 +98,16 @@
         <section id="componentsCard" class="card components-card">
           <div class="card-head">
             <h2 data-i18n="componentsTitle">Каталог компонентов</h2>
+            <div class="card-head-tools">
+              <button
+                id="newComponentBtn"
+                class="btn btn-ghost component-new-btn"
+                type="button"
+                data-i18n="componentNewBtn"
+              >
+                Новый
+              </button>
+            </div>
           </div>
           <div id="componentPaletteList" class="component-palette-list"></div>
         </section>
@@ -112,7 +122,7 @@
               <button id="clearEditorBtn" class="btn btn-ghost editor-clear-btn" type="button" data-i18n="clearBtn">Очистить</button>
             </div>
           </div>
-          <textarea id="jsonEditor" spellcheck="false"></textarea>
+          <div id="jsonEditor" aria-label="Schema editor"></div>
           <p id="editorFileInfo" class="editor-file-info"></p>
         </section>
 
@@ -149,6 +159,66 @@
     </div>
 
     <input id="jsonFileInput" class="file-input-hidden" type="file" accept=".json,application/json" />
+    <div id="componentEditorModal" class="modal-backdrop is-hidden" role="dialog" aria-modal="true" aria-labelledby="componentEditorTitle">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3 id="componentEditorTitle" data-i18n="componentEditorTitle">Редактор компонента</h3>
+        </div>
+        <form id="componentEditorForm" class="component-editor-form">
+          <div class="component-editor-grid component-editor-top-grid">
+            <label class="context-field">
+              <span data-i18n="componentFieldType">Type</span>
+              <input id="componentFieldType" type="text" required />
+            </label>
+            <label class="context-field">
+              <span data-i18n="componentFieldMode">Mode</span>
+              <select id="componentFieldMode">
+                <option value="" data-i18n="componentModeInsert">Вставка</option>
+                <option value="replace-schema" data-i18n="componentModeReplace">Заменить схему</option>
+              </select>
+            </label>
+          </div>
+          <div class="component-editor-grid">
+            <label class="context-field">
+              <span data-i18n="componentFieldTitleRu">Title (RU)</span>
+              <input id="componentFieldTitleRu" type="text" required />
+            </label>
+            <label class="context-field">
+              <span data-i18n="componentFieldTitleEn">Title (EN)</span>
+              <input id="componentFieldTitleEn" type="text" required />
+            </label>
+          </div>
+          <div class="component-editor-grid">
+            <label class="context-field">
+              <span data-i18n="componentFieldDescRu">Description (RU)</span>
+              <textarea id="componentFieldDescRu" rows="2" required></textarea>
+            </label>
+            <label class="context-field">
+              <span data-i18n="componentFieldDescEn">Description (EN)</span>
+              <textarea id="componentFieldDescEn" rows="2" required></textarea>
+            </label>
+          </div>
+          <div class="component-editor-grid">
+            <label class="context-field">
+              <span data-i18n="componentFieldFieldsRu">Fields (RU)</span>
+              <textarea id="componentFieldFieldsRu" rows="2"></textarea>
+            </label>
+            <label class="context-field">
+              <span data-i18n="componentFieldFieldsEn">Fields (EN)</span>
+              <textarea id="componentFieldFieldsEn" rows="2"></textarea>
+            </label>
+          </div>
+          <label class="context-field component-template-field">
+            <span data-i18n="componentFieldTemplate">Template JSON</span>
+            <div id="componentTemplateEditor" class="component-template-editor" aria-label="Component template JSON editor"></div>
+          </label>
+          <div class="modal-actions">
+            <button id="componentEditorCancelBtn" class="btn btn-ghost" type="button" data-i18n="cancelBtn">Отмена</button>
+            <button id="componentEditorSaveBtn" class="btn btn-ghost" type="submit" data-i18n="saveBtn">Сохранить</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <script src="/components/registry.js"></script>
     <script src="/components/shared.js"></script>
@@ -158,8 +228,9 @@
     <script src="/components/text.js"></script>
     <script src="/components/button.js"></script>
     <script src="/components/iconbutton.js"></script>
+    <script src="/components/navbar.js"></script>
     <script src="/components/spacer.js"></script>
     <script src="/components/input.js"></script>
-    <script src="/app.js"></script>
+    <script type="module" src="/app.js"></script>
   </body>
 </html>
