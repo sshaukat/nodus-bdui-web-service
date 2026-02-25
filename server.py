@@ -3,8 +3,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import mimetypes
+import os
 import re
+import threading
+import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,15 +17,24 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from runtime_core import decode_validate as runtime_decode_validate
+from runtime_core.models import ALLOWED_SCHEMA_VERSIONS, normalize_schema_version
+
 WEB_DIR = Path(__file__).resolve().parent / "web"
-DATA_DIR = Path(__file__).resolve().parent / "data"
+DATA_DIR = Path(os.getenv("NODUS_DATA_DIR", str(Path(__file__).resolve().parent / "data"))).resolve()
+COMPONENTS_WRITE_TOKEN = str(os.getenv("NODUS_COMPONENTS_WRITE_TOKEN", "dev-components-token")).strip()
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+LOGGER = logging.getLogger("nodus-bdui-web")
 
 
 class ApiError(Exception):
-    def __init__(self, status: HTTPStatus, message: str):
+    def __init__(self, status: HTTPStatus, message: str, code: str = "api_error", details: Any | None = None):
         super().__init__(message)
         self.status = status
         self.message = message
+        self.code = code
+        self.details = details
 
 
 class BduiRuntime:
@@ -28,23 +42,17 @@ class BduiRuntime:
     ACTION_TYPES = {"log", "open_url", "navigate"}
 
     @classmethod
-    def decode_validate(cls, schema: Any, schema_rules_profile: str = "v0_1_default") -> dict[str, Any]:
-        # Profile lookup point for future versions. Currently, all profiles map to v0.1 rules.
-        _ = schema_rules_profile
-
-        decode_errors: list[dict[str, str]] = []
-        node = cls._decode_node(schema, "$", decode_errors)
-
-        validation_errors: list[dict[str, str]] = []
-        if node is not None:
-            cls._validate_node(node, "$", validation_errors, seen_ids=set())
-
-        return {
-            "ok": node is not None and not decode_errors and not validation_errors,
-            "node": node,
-            "decodeErrors": decode_errors,
-            "validationErrors": validation_errors,
-        }
+    def decode_validate(
+        cls,
+        schema: Any,
+        schema_rules_profile: str = "v0_1_default",
+        schema_version: str | None = None,
+    ) -> dict[str, Any]:
+        return runtime_decode_validate(
+            schema,
+            schema_rules_profile=schema_rules_profile,
+            schema_version=schema_version,
+        )
 
     @classmethod
     def _decode_node(cls, source: Any, path: str, errors: list[dict[str, str]]) -> dict[str, Any] | None:
@@ -338,9 +346,45 @@ class BduiRuntime:
         return fallback
 
 
+class Metrics:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.requests_total = 0
+        self.errors_total = 0
+        self.publish_total = 0
+        self.by_route: dict[str, int] = {}
+
+    def inc_request(self, method: str, path: str) -> None:
+        route = f"{method} {path}"
+        with self._lock:
+            self.requests_total += 1
+            self.by_route[route] = self.by_route.get(route, 0) + 1
+
+    def inc_error(self) -> None:
+        with self._lock:
+            self.errors_total += 1
+
+    def inc_publish(self) -> None:
+        with self._lock:
+            self.publish_total += 1
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "requests_total": self.requests_total,
+                "errors_total": self.errors_total,
+                "publish_total": self.publish_total,
+                "routes": dict(self.by_route),
+            }
+
+
+metrics = Metrics()
+
+
 class RegistryStorage:
     SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-_]{0,62}$")
     PUBLICATION_RETENTION_DAYS = 31
+    DEFAULT_SCHEMA_VERSION = "v0_2"
 
     def __init__(self, base_dir: Path):
         self.base_dir = base_dir
@@ -377,6 +421,54 @@ class RegistryStorage:
             return parsed.astimezone(timezone.utc)
         except Exception:
             return None
+
+    def _normalize_schema_version(self, value: Any, fallback: str | None = None) -> str:
+        normalized_fallback = fallback or self.DEFAULT_SCHEMA_VERSION
+        raw = str(value or "").strip()
+        if raw:
+            normalized = normalize_schema_version(raw, fallback="")
+            if normalized not in ALLOWED_SCHEMA_VERSIONS:
+                raise ApiError(
+                    HTTPStatus.BAD_REQUEST,
+                    f"schema_version must be one of {sorted(ALLOWED_SCHEMA_VERSIONS)}",
+                    code="invalid_schema_version",
+                )
+            return normalized
+        normalized = normalize_schema_version("", fallback=normalized_fallback)
+        if normalized not in ALLOWED_SCHEMA_VERSIONS:
+            raise ApiError(
+                HTTPStatus.BAD_REQUEST,
+                f"schema_version must be one of {sorted(ALLOWED_SCHEMA_VERSIONS)}",
+                code="invalid_schema_version",
+            )
+        return normalized
+
+    @staticmethod
+    def _schema_profile_for_version(schema_version: str) -> str:
+        return "v0_2_strict" if schema_version == "v0_2" else "v0_1_default"
+
+    def _extract_schema_version_from_content(self, content_json: Any) -> str | None:
+        if isinstance(content_json, dict) and isinstance(content_json.get("schemaVersion"), str):
+            return self._normalize_schema_version(content_json.get("schemaVersion"), fallback="v0_1")
+        return None
+
+    def _ensure_content_schema_version(self, content_json: Any, schema_version: str) -> Any:
+        if isinstance(content_json, dict):
+            patched = dict(content_json)
+            patched["schemaVersion"] = schema_version
+            return patched
+        return content_json
+
+    @staticmethod
+    def _deep_merge_dicts(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(base)
+        for key, value in patch.items():
+            existing = merged.get(key)
+            if isinstance(existing, dict) and isinstance(value, dict):
+                merged[key] = RegistryStorage._deep_merge_dicts(existing, value)
+            else:
+                merged[key] = value
+        return merged
 
     def _validate_slug(self, value: str, field_name: str) -> str:
         if not isinstance(value, str):
@@ -464,7 +556,11 @@ class RegistryStorage:
             "description": self._normalize_locale_field(payload.get("description"), ctype),
             "fields": self._normalize_locale_field(payload.get("fields"), ""),
             "template": template,
+            "updated_by": str(payload.get("updated_by") or "system"),
         }
+        change_note = str(payload.get("change_note") or "").strip()
+        if change_note:
+            result["change_note"] = change_note
         if mode:
             result["mode"] = mode
         return result
@@ -486,6 +582,10 @@ class RegistryStorage:
                 normalized["created_at"] = created_at
             if updated_at:
                 normalized["updated_at"] = updated_at
+            if payload.get("updated_by"):
+                normalized["updated_by"] = payload.get("updated_by")
+            if payload.get("change_note"):
+                normalized["change_note"] = payload.get("change_note")
             items.append(normalized)
         return items
 
@@ -524,6 +624,72 @@ class RegistryStorage:
             raise ApiError(HTTPStatus.NOT_FOUND, f"Component not found: {path.stem}")
         path.unlink(missing_ok=True)
         return {"type": path.stem, "deleted": True}
+
+    def export_components(self) -> dict[str, Any]:
+        return {
+            "exported_at": self._now_iso(),
+            "items": self.list_components(),
+        }
+
+    def import_components(
+        self,
+        payload: dict[str, Any],
+        strategy: str,
+        requested_by: str = "system",
+        change_note: str = "",
+    ) -> dict[str, Any]:
+        mode = str(strategy or "").strip().lower()
+        if mode not in {"skip", "overwrite", "merge"}:
+            raise ApiError(HTTPStatus.BAD_REQUEST, "strategy must be skip|overwrite|merge", code="invalid_strategy")
+
+        raw_items = payload.get("items")
+        if not isinstance(raw_items, list):
+            raise ApiError(HTTPStatus.BAD_REQUEST, "import payload must contain array field 'items'", code="invalid_import_payload")
+
+        summary = {"created": 0, "updated": 0, "skipped": 0, "failed": 0, "errors": []}
+
+        for index, raw in enumerate(raw_items):
+            try:
+                if not isinstance(raw, dict):
+                    raise ApiError(HTTPStatus.BAD_REQUEST, f"items[{index}] must be an object", code="invalid_component_payload")
+
+                incoming = dict(raw)
+                incoming["updated_by"] = str(raw.get("updated_by") or requested_by or "system")
+                if change_note and not incoming.get("change_note"):
+                    incoming["change_note"] = change_note
+
+                normalized = self._normalize_component_payload(incoming)
+                path = self._component_file(str(normalized.get("type") or ""))
+                exists = path.exists()
+
+                if exists and mode == "skip":
+                    summary["skipped"] += 1
+                    continue
+
+                if exists and mode == "merge":
+                    existing = self._load_json(path, {})
+                    if not isinstance(existing, dict):
+                        existing = {}
+                    merged_payload = self._deep_merge_dicts(existing, incoming)
+                    merged_payload["type"] = path.stem
+                    normalized = self._normalize_component_payload(merged_payload, component_type=path.stem)
+
+                if exists:
+                    self.upsert_component(path.stem, normalized)
+                    summary["updated"] += 1
+                else:
+                    self.create_component(normalized)
+                    summary["created"] += 1
+            except ApiError as exc:
+                summary["failed"] += 1
+                summary["errors"].append({"index": index, "error": exc.message, "code": exc.code})
+
+        return {
+            "strategy": mode,
+            "requested_by": requested_by,
+            "summary": summary,
+            "updated_at": self._now_iso(),
+        }
 
     def list_projects(self) -> list[dict[str, Any]]:
         projects: list[dict[str, Any]] = []
@@ -632,12 +798,16 @@ class RegistryStorage:
         if meta_path.exists():
             raise ApiError(HTTPStatus.CONFLICT, f"Version already exists: {version_id}")
 
+        default_schema_version = self._normalize_schema_version(payload.get("default_schema_version"), fallback=self.DEFAULT_SCHEMA_VERSION)
+        schema_rules_profile = str(payload.get("schema_rules_profile") or self._schema_profile_for_version(default_schema_version))
+
         meta = {
             "project_id": project_id,
             "contract_id": contract_id,
             "version_id": version_id,
             "based_on_version_id": based_on_version_id,
-            "schema_rules_profile": str(payload.get("schema_rules_profile") or "v0_1_default"),
+            "schema_rules_profile": schema_rules_profile,
+            "default_schema_version": default_schema_version,
             "renderer_profile": str(payload.get("renderer_profile") or "web_v0_1"),
             "status": str(payload.get("status") or "draft"),
             "created_at": self._now_iso(),
@@ -656,6 +826,13 @@ class RegistryStorage:
         sid = self._validate_slug(screen_id, "screen_id")
         return self._draft_screens_dir(project_id, contract_id, version_id) / f"{sid}.json"
 
+    def _version_meta(self, project_id: str, contract_id: str, version_id: str) -> dict[str, Any]:
+        return self._load_json(self._version_meta_path(project_id, contract_id, version_id), {})
+
+    def _default_schema_version_for_version(self, project_id: str, contract_id: str, version_id: str) -> str:
+        meta = self._version_meta(project_id, contract_id, version_id)
+        return self._normalize_schema_version(meta.get("default_schema_version"), fallback="v0_1")
+
     def list_screens(self, project_id: str, contract_id: str, version_id: str, include_deleted: bool = False) -> list[dict[str, Any]]:
         self._ensure_version(project_id, contract_id, version_id)
         root = self._draft_screens_dir(project_id, contract_id, version_id)
@@ -663,11 +840,14 @@ class RegistryStorage:
             return []
 
         items: list[dict[str, Any]] = []
+        default_schema_version = self._default_schema_version_for_version(project_id, contract_id, version_id)
         for screen_file in sorted(root.glob("*.json")):
             payload = self._load_json(screen_file, {})
             status = str(payload.get("status") or "active")
             if status == "deleted" and not include_deleted:
                 continue
+            schema_version = payload.get("schema_version") or self._extract_schema_version_from_content(payload.get("content_json"))
+            payload["schema_version"] = self._normalize_schema_version(schema_version, fallback=default_schema_version)
             items.append(payload)
         return items
 
@@ -676,7 +856,11 @@ class RegistryStorage:
         path = self._screen_file(project_id, contract_id, version_id, screen_id)
         if not path.exists():
             raise ApiError(HTTPStatus.NOT_FOUND, f"Screen not found: {screen_id}")
-        return self._load_json(path, {})
+        payload = self._load_json(path, {})
+        default_schema_version = self._default_schema_version_for_version(project_id, contract_id, version_id)
+        schema_version = payload.get("schema_version") or self._extract_schema_version_from_content(payload.get("content_json"))
+        payload["schema_version"] = self._normalize_schema_version(schema_version, fallback=default_schema_version)
+        return payload
 
     def create_screen(self, payload: dict[str, Any]) -> dict[str, Any]:
         project_id = self._validate_slug(payload.get("project_id") or "", "project_id")
@@ -689,6 +873,8 @@ class RegistryStorage:
         if path.exists():
             raise ApiError(HTTPStatus.CONFLICT, f"Screen already exists: {screen_id}")
 
+        default_schema_version = self._default_schema_version_for_version(project_id, contract_id, version_id)
+        schema_version = self._normalize_schema_version(payload.get("schema_version"), fallback=default_schema_version)
         content_json = payload.get("content_json")
         content_raw = payload.get("content_raw")
         content_parse_error = None
@@ -696,11 +882,15 @@ class RegistryStorage:
             content_raw = str(content_raw)
             try:
                 content_json = json.loads(content_raw)
+                extracted = self._extract_schema_version_from_content(content_json)
+                if extracted:
+                    schema_version = extracted
             except json.JSONDecodeError as exc:
                 content_json = None
                 content_parse_error = f"Invalid schema JSON: {exc}"
         elif content_json is None:
             content_json = {
+                "schemaVersion": schema_version,
                 "type": "column",
                 "id": "form",
                 "layout": {"padding": {"top": 8, "right": 8, "bottom": 8, "left": 8}},
@@ -708,6 +898,14 @@ class RegistryStorage:
             }
             content_raw = json.dumps(content_json, ensure_ascii=False, indent=2) + "\n"
         else:
+            extracted = self._extract_schema_version_from_content(content_json)
+            if extracted:
+                schema_version = extracted
+            content_json = self._ensure_content_schema_version(content_json, schema_version)
+            content_raw = json.dumps(content_json, ensure_ascii=False, indent=2) + "\n"
+
+        if content_json is not None:
+            content_json = self._ensure_content_schema_version(content_json, schema_version)
             content_raw = json.dumps(content_json, ensure_ascii=False, indent=2) + "\n"
 
         record = {
@@ -717,6 +915,7 @@ class RegistryStorage:
             "screen_id": screen_id,
             "name": str(payload.get("name") or screen_id),
             "status": str(payload.get("status") or "active"),
+            "schema_version": schema_version,
             "content_json": content_json,
             "content_raw": content_raw,
             "content_parse_error": content_parse_error,
@@ -735,23 +934,44 @@ class RegistryStorage:
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         record = self.get_screen(project_id, contract_id, version_id, screen_id)
+        default_schema_version = self._default_schema_version_for_version(project_id, contract_id, version_id)
+        schema_version = self._normalize_schema_version(record.get("schema_version"), fallback=default_schema_version)
+        if "schema_version" in payload:
+            schema_version = self._normalize_schema_version(payload.get("schema_version"), fallback=schema_version)
+
         if "name" in payload:
             record["name"] = str(payload.get("name") or record.get("name") or screen_id)
         if "content_raw" in payload:
             content_raw = str(payload.get("content_raw") or "")
             record["content_raw"] = content_raw
             try:
-                record["content_json"] = json.loads(content_raw)
+                parsed_content = json.loads(content_raw)
+                extracted = self._extract_schema_version_from_content(parsed_content)
+                if extracted:
+                    schema_version = extracted
+                parsed_content = self._ensure_content_schema_version(parsed_content, schema_version)
+                record["content_json"] = parsed_content
+                record["content_raw"] = json.dumps(parsed_content, ensure_ascii=False, indent=2) + "\n"
                 record["content_parse_error"] = None
             except json.JSONDecodeError as exc:
                 record["content_json"] = None
                 record["content_parse_error"] = f"Invalid schema JSON: {exc}"
         elif "content_json" in payload:
-            record["content_json"] = payload.get("content_json")
-            record["content_raw"] = json.dumps(record["content_json"], ensure_ascii=False, indent=2) + "\n"
+            incoming_content = payload.get("content_json")
+            extracted = self._extract_schema_version_from_content(incoming_content)
+            if extracted:
+                schema_version = extracted
+            incoming_content = self._ensure_content_schema_version(incoming_content, schema_version)
+            record["content_json"] = incoming_content
+            record["content_raw"] = json.dumps(incoming_content, ensure_ascii=False, indent=2) + "\n"
             record["content_parse_error"] = None
         if "status" in payload:
             record["status"] = str(payload.get("status") or record.get("status") or "active")
+        record["schema_version"] = schema_version
+        if record.get("content_json") is not None:
+            content = self._ensure_content_schema_version(record.get("content_json"), schema_version)
+            record["content_json"] = content
+            record["content_raw"] = json.dumps(content, ensure_ascii=False, indent=2) + "\n"
         record["updated_at"] = self._now_iso()
 
         path = self._screen_file(project_id, contract_id, version_id, screen_id)
@@ -785,6 +1005,7 @@ class RegistryStorage:
                 "screen_id": screen.get("screen_id"),
                 "name": screen.get("name"),
                 "status": screen.get("status"),
+                "schema_version": screen.get("schema_version"),
                 "updated_at": screen.get("updated_at"),
             }
             for screen in screens
@@ -806,35 +1027,49 @@ class RegistryStorage:
         self._ensure_version(project_id, contract_id, version_id)
 
         version_meta = self._load_json(self._version_meta_path(project_id, contract_id, version_id), {})
-        schema_rules_profile = str(version_meta.get("schema_rules_profile") or "v0_1_default")
+        default_schema_version = self._normalize_schema_version(version_meta.get("default_schema_version"), fallback="v0_1")
 
         screens = [
             item for item in self.list_screens(project_id, contract_id, version_id, include_deleted=False) if item.get("status") == "active"
         ]
         validation_errors: list[dict[str, Any]] = []
         for screen in screens:
+            screen_schema_version = self._normalize_schema_version(screen.get("schema_version"), fallback=default_schema_version)
+            schema_rules_profile = self._schema_profile_for_version(screen_schema_version)
             if screen.get("content_parse_error"):
                 validation_errors.append(
                     {
                         "screen_id": screen.get("screen_id"),
+                        "schema_version": screen_schema_version,
                         "decodeErrors": [{"path": "$", "message": str(screen.get("content_parse_error"))}],
                         "validationErrors": [],
                     }
                 )
                 continue
 
-            result = BduiRuntime.decode_validate(screen.get("content_json"), schema_rules_profile=schema_rules_profile)
+            result = BduiRuntime.decode_validate(
+                screen.get("content_json"),
+                schema_rules_profile=schema_rules_profile,
+                schema_version=screen_schema_version,
+            )
             if not result.get("ok"):
                 validation_errors.append(
                     {
                         "screen_id": screen.get("screen_id"),
+                        "schema_version": screen_schema_version,
+                        "appliedSchemaVersion": result.get("appliedSchemaVersion"),
                         "decodeErrors": result.get("decodeErrors", []),
                         "validationErrors": result.get("validationErrors", []),
                     }
                 )
 
         if validation_errors:
-            raise ApiError(HTTPStatus.BAD_REQUEST, json.dumps({"message": "publish blocked by validation errors", "details": validation_errors}, ensure_ascii=False))
+            raise ApiError(
+                HTTPStatus.BAD_REQUEST,
+                "publish blocked by validation errors",
+                code="publish_validation_failed",
+                details=validation_errors,
+            )
 
         pub_id = datetime.now(tz=timezone.utc).strftime("pub-%Y%m%dT%H%M%S%fZ")
         published_root = self._version_dir(project_id, contract_id, version_id) / "published" / pub_id
@@ -842,15 +1077,19 @@ class RegistryStorage:
         screens_root.mkdir(parents=True, exist_ok=True)
 
         screens_manifest: list[dict[str, Any]] = []
+        schema_versions: set[str] = set()
         for screen in screens:
             sid = self._validate_slug(str(screen.get("screen_id") or ""), "screen_id")
-            content = screen.get("content_json")
+            screen_schema_version = self._normalize_schema_version(screen.get("schema_version"), fallback=default_schema_version)
+            schema_versions.add(screen_schema_version)
+            content = self._ensure_content_schema_version(screen.get("content_json"), screen_schema_version)
             self._dump_json(screens_root / f"{sid}.json", content)
             screens_manifest.append(
                 {
                     "screen_id": sid,
                     "name": screen.get("name"),
                     "status": screen.get("status"),
+                    "schema_version": screen_schema_version,
                     "updated_at": screen.get("updated_at"),
                     "schema_id": f"{project_id}:{contract_id}:{version_id}:{sid}",
                 }
@@ -861,7 +1100,9 @@ class RegistryStorage:
             "project_id": project_id,
             "contract_id": contract_id,
             "version_id": version_id,
-            "schema_rules_profile": schema_rules_profile,
+            "schema_rules_profile": version_meta.get("schema_rules_profile", self._schema_profile_for_version(default_schema_version)),
+            "default_schema_version": default_schema_version,
+            "schema_versions": sorted(schema_versions),
             "renderer_profile": version_meta.get("renderer_profile", "web_v0_1"),
             "published_at": self._now_iso(),
             "screens": screens_manifest,
@@ -947,6 +1188,7 @@ class RegistryStorage:
                         "project_id": manifest.get("project_id"),
                         "contract_id": manifest.get("contract_id"),
                         "version_id": manifest.get("version_id"),
+                        "schema_version": screen.get("schema_version"),
                         "pub_id": manifest.get("pub_id"),
                         "screen_id": screen.get("screen_id"),
                         "name": screen.get("name"),
@@ -1010,6 +1252,14 @@ class RegistryStorage:
             "project_id": pid,
             "contract_id": cid,
             "version_id": vid,
+            "schema_version": next(
+                (
+                    screen.get("schema_version")
+                    for screen in manifest.get("screens", [])
+                    if screen.get("screen_id") == sid
+                ),
+                manifest.get("default_schema_version"),
+            ),
             "pub_id": resolved_pub_id,
             "screen_id": sid,
             "schema": self._load_json(schema_path, {}),
@@ -1032,81 +1282,102 @@ class RequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query)
+        self._prepare_request("GET", path)
+        try:
+            if path == "/api/health":
+                self._json_response(HTTPStatus.OK, {"status": "ok", "service": "nodus-bdui-web"})
+                return
 
-        if path == "/api/health":
-            self._json_response(HTTPStatus.OK, {"status": "ok", "service": "nodus-bdui-web"})
-            return
+            if path == "/metrics":
+                snapshot = metrics.snapshot()
+                route_lines = []
+                for route, count in sorted(snapshot.get("routes", {}).items()):
+                    escaped = route.replace("\\", "\\\\").replace('"', '\\"')
+                    route_lines.append(f'nodus_requests_by_route{{route="{escaped}"}} {count}')
+                lines = [
+                    f"nodus_requests_total {snapshot.get('requests_total', 0)}",
+                    f"nodus_errors_total {snapshot.get('errors_total', 0)}",
+                    f"nodus_publish_total {snapshot.get('publish_total', 0)}",
+                    *route_lines,
+                    "",
+                ]
+                self._text_response(HTTPStatus.OK, "\n".join(lines), content_type="text/plain; version=0.0.4")
+                return
 
-        if path == "/api/projects":
-            self._json_response(HTTPStatus.OK, {"items": storage.list_projects()})
-            return
+            if path == "/api/projects":
+                self._json_response(HTTPStatus.OK, {"items": storage.list_projects()})
+                return
 
-        if path == "/api/contracts":
-            project_id = self._required_query(query, "project_id")
-            self._json_response(HTTPStatus.OK, {"items": storage.list_contracts(project_id)})
-            return
+            if path == "/api/contracts":
+                project_id = self._required_query(query, "project_id")
+                self._json_response(HTTPStatus.OK, {"items": storage.list_contracts(project_id)})
+                return
 
-        if path == "/api/versions":
-            project_id = self._required_query(query, "project_id")
-            contract_id = self._required_query(query, "contract_id")
-            self._json_response(HTTPStatus.OK, {"items": storage.list_versions(project_id, contract_id)})
-            return
+            if path == "/api/versions":
+                project_id = self._required_query(query, "project_id")
+                contract_id = self._required_query(query, "contract_id")
+                self._json_response(HTTPStatus.OK, {"items": storage.list_versions(project_id, contract_id)})
+                return
 
-        if path == "/api/screens":
-            project_id = self._required_query(query, "project_id")
-            contract_id = self._required_query(query, "contract_id")
-            version_id = self._required_query(query, "version_id")
-            include_deleted = self._optional_query(query, "include_deleted") == "1"
-            self._json_response(
-                HTTPStatus.OK,
-                {"items": storage.list_screens(project_id, contract_id, version_id, include_deleted=include_deleted)},
-            )
-            return
+            if path == "/api/screens":
+                project_id = self._required_query(query, "project_id")
+                contract_id = self._required_query(query, "contract_id")
+                version_id = self._required_query(query, "version_id")
+                include_deleted = self._optional_query(query, "include_deleted") == "1"
+                self._json_response(
+                    HTTPStatus.OK,
+                    {"items": storage.list_screens(project_id, contract_id, version_id, include_deleted=include_deleted)},
+                )
+                return
 
-        if path == "/api/components":
-            self._json_response(HTTPStatus.OK, {"items": storage.list_components()})
-            return
+            if path == "/api/components":
+                self._json_response(HTTPStatus.OK, {"items": storage.list_components()})
+                return
 
-        if path == "/schemas":
-            project_id = self._optional_query(query, "project")
-            contract_id = self._optional_query(query, "contract")
-            version_id = self._optional_query(query, "version")
-            self._json_response(HTTPStatus.OK, {"items": storage.list_published_schemas(project_id, contract_id, version_id)})
-            return
+            if path == "/api/components/export":
+                self._json_response(HTTPStatus.OK, storage.export_components())
+                return
 
-        if path.startswith("/schema/"):
-            tail = path[len("/schema/") :]
-            parts = [unquote(part) for part in tail.split("/") if part]
-            pub_id = self._optional_query(query, "pub_id")
-            try:
+            if path == "/schemas":
+                project_id = self._optional_query(query, "project")
+                contract_id = self._optional_query(query, "contract")
+                version_id = self._optional_query(query, "version")
+                self._json_response(HTTPStatus.OK, {"items": storage.list_published_schemas(project_id, contract_id, version_id)})
+                return
+
+            if path.startswith("/schema/"):
+                tail = path[len("/schema/") :]
+                parts = [unquote(part) for part in tail.split("/") if part]
+                pub_id = self._optional_query(query, "pub_id")
                 if len(parts) == 1:
                     payload = storage.get_published_schema_by_id(parts[0], pub_id=pub_id)
                 elif len(parts) == 4:
-                    payload = storage.get_published_schema_by_parts(
-                        parts[0],
-                        parts[1],
-                        parts[2],
-                        parts[3],
-                        pub_id=pub_id,
-                    )
+                    payload = storage.get_published_schema_by_parts(parts[0], parts[1], parts[2], parts[3], pub_id=pub_id)
                 else:
-                    raise ApiError(HTTPStatus.BAD_REQUEST, "Use /schema/<id> or /schema/<project>/<contract>/<version>/<screen>")
-            except ApiError as exc:
-                self._json_response(exc.status, {"error": exc.message})
+                    raise ApiError(
+                        HTTPStatus.BAD_REQUEST,
+                        "Use /schema/<id> or /schema/<project>/<contract>/<version>/<screen>",
+                        code="invalid_schema_path",
+                    )
+                self._json_response(HTTPStatus.OK, payload)
                 return
-            self._json_response(HTTPStatus.OK, payload)
-            return
 
-        if path == "/":
-            self._serve_file("index.html")
-            return
+            if path == "/":
+                self._serve_file("index.html")
+                return
 
-        relative_path = path.lstrip("/") or "index.html"
-        self._serve_file(relative_path)
+            relative_path = path.lstrip("/") or "index.html"
+            self._serve_file(relative_path)
+        except ApiError as exc:
+            self._error_response(exc)
+        except Exception as exc:
+            self._error_response(ApiError(HTTPStatus.INTERNAL_SERVER_ERROR, f"Unhandled server error: {exc}", code="internal_error"))
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
+        query = parse_qs(parsed.query)
+        self._prepare_request("POST", path)
 
         try:
             payload = self._read_json_body()
@@ -1124,12 +1395,31 @@ class RequestHandler(BaseHTTPRequestHandler):
                                 "node": None,
                                 "decodeErrors": [{"path": "$", "message": f"Invalid schema JSON: {exc}"}],
                                 "validationErrors": [],
+                                "appliedSchemaVersion": "v0_1",
                             },
                         )
                         return
 
-                schema_rules_profile = str(payload.get("schema_rules_profile") or "v0_1_default")
-                result = BduiRuntime.decode_validate(schema, schema_rules_profile=schema_rules_profile)
+                schema_version = payload.get("schema_version") or payload.get("schemaVersion")
+                if schema_version is None and isinstance(schema, dict):
+                    schema_version = schema.get("schemaVersion")
+                if schema_version:
+                    normalized_explicit = normalize_schema_version(str(schema_version), fallback="")
+                    if normalized_explicit not in ALLOWED_SCHEMA_VERSIONS:
+                        raise ApiError(
+                            HTTPStatus.BAD_REQUEST,
+                            f"schema_version must be one of {sorted(ALLOWED_SCHEMA_VERSIONS)}",
+                            code="invalid_schema_version",
+                        )
+                normalized_schema_version = normalize_schema_version(str(schema_version or ""), fallback="v0_1")
+                schema_rules_profile = str(
+                    payload.get("schema_rules_profile") or ("v0_2_strict" if normalized_schema_version == "v0_2" else "v0_1_default")
+                )
+                result = BduiRuntime.decode_validate(
+                    schema,
+                    schema_rules_profile=schema_rules_profile,
+                    schema_version=schema_version if isinstance(schema_version, str) else None,
+                )
                 self._json_response(HTTPStatus.OK, result)
                 return
 
@@ -1150,39 +1440,59 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
 
             if path == "/api/components":
+                self._require_components_write_access()
+                payload["updated_by"] = str(payload.get("updated_by") or self._actor())
                 self._json_response(HTTPStatus.CREATED, storage.create_component(payload))
                 return
 
-            if path == "/api/publish":
-                self._json_response(HTTPStatus.OK, storage.publish_version(payload))
+            if path == "/api/components/import":
+                self._require_components_write_access()
+                strategy = self._optional_query(query, "strategy") or str(payload.get("strategy") or "skip")
+                change_note = str(payload.get("change_note") or "")
+                self._json_response(
+                    HTTPStatus.OK,
+                    storage.import_components(payload, strategy, requested_by=self._actor(), change_note=change_note),
+                )
                 return
 
-            self._json_response(HTTPStatus.NOT_FOUND, {"error": "Not found"})
+            if path == "/api/publish":
+                result = storage.publish_version(payload)
+                metrics.inc_publish()
+                self._json_response(HTTPStatus.OK, result)
+                return
 
+            self._error_response(ApiError(HTTPStatus.NOT_FOUND, "Not found", code="not_found"))
         except ApiError as exc:
-            self._json_response(exc.status, {"error": exc.message})
+            self._error_response(exc)
         except json.JSONDecodeError as exc:
-            self._json_response(HTTPStatus.BAD_REQUEST, {"error": f"Invalid JSON body: {exc}"})
+            self._error_response(ApiError(HTTPStatus.BAD_REQUEST, f"Invalid JSON body: {exc}", code="invalid_json"))
+        except Exception as exc:
+            self._error_response(ApiError(HTTPStatus.INTERNAL_SERVER_ERROR, f"Unhandled server error: {exc}", code="internal_error"))
 
     def do_PUT(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query)
+        self._prepare_request("PUT", path)
 
         if path.startswith("/api/components/"):
             component_type = path.split("/")[-1]
             try:
+                self._require_components_write_access()
                 payload = self._read_json_body()
+                payload["updated_by"] = str(payload.get("updated_by") or self._actor())
                 updated = storage.upsert_component(component_type, payload)
                 self._json_response(HTTPStatus.OK, updated)
             except ApiError as exc:
-                self._json_response(exc.status, {"error": exc.message})
+                self._error_response(exc)
             except json.JSONDecodeError as exc:
-                self._json_response(HTTPStatus.BAD_REQUEST, {"error": f"Invalid JSON body: {exc}"})
+                self._error_response(ApiError(HTTPStatus.BAD_REQUEST, f"Invalid JSON body: {exc}", code="invalid_json"))
+            except Exception as exc:
+                self._error_response(ApiError(HTTPStatus.INTERNAL_SERVER_ERROR, f"Unhandled server error: {exc}", code="internal_error"))
             return
 
         if not path.startswith("/api/screens/"):
-            self._json_response(HTTPStatus.NOT_FOUND, {"error": "Not found"})
+            self._error_response(ApiError(HTTPStatus.NOT_FOUND, "Not found", code="not_found"))
             return
 
         try:
@@ -1194,31 +1504,38 @@ class RequestHandler(BaseHTTPRequestHandler):
             updated = storage.update_screen(project_id, contract_id, version_id, screen_id, payload)
             self._json_response(HTTPStatus.OK, updated)
         except ApiError as exc:
-            self._json_response(exc.status, {"error": exc.message})
+            self._error_response(exc)
         except json.JSONDecodeError as exc:
-            self._json_response(HTTPStatus.BAD_REQUEST, {"error": f"Invalid JSON body: {exc}"})
+            self._error_response(ApiError(HTTPStatus.BAD_REQUEST, f"Invalid JSON body: {exc}", code="invalid_json"))
+        except Exception as exc:
+            self._error_response(ApiError(HTTPStatus.INTERNAL_SERVER_ERROR, f"Unhandled server error: {exc}", code="internal_error"))
 
     def do_DELETE(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
+        self._prepare_request("DELETE", path)
 
         if path.startswith("/api/components/"):
             component_type = path.split("/")[-1]
             try:
+                self._require_components_write_access()
                 self._json_response(HTTPStatus.OK, storage.delete_component(component_type))
             except ApiError as exc:
-                self._json_response(exc.status, {"error": exc.message})
+                self._error_response(exc)
+            except Exception as exc:
+                self._error_response(ApiError(HTTPStatus.INTERNAL_SERVER_ERROR, f"Unhandled server error: {exc}", code="internal_error"))
             return
 
-        self._json_response(HTTPStatus.NOT_FOUND, {"error": "Not found"})
+        self._error_response(ApiError(HTTPStatus.NOT_FOUND, "Not found", code="not_found"))
 
     def do_PATCH(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query)
+        self._prepare_request("PATCH", path)
 
         if not path.endswith("/status") or not path.startswith("/api/screens/"):
-            self._json_response(HTTPStatus.NOT_FOUND, {"error": "Not found"})
+            self._error_response(ApiError(HTTPStatus.NOT_FOUND, "Not found", code="not_found"))
             return
 
         try:
@@ -1231,9 +1548,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             updated = storage.patch_screen_status(project_id, contract_id, version_id, screen_id, status)
             self._json_response(HTTPStatus.OK, updated)
         except ApiError as exc:
-            self._json_response(exc.status, {"error": exc.message})
+            self._error_response(exc)
         except json.JSONDecodeError as exc:
-            self._json_response(HTTPStatus.BAD_REQUEST, {"error": f"Invalid JSON body: {exc}"})
+            self._error_response(ApiError(HTTPStatus.BAD_REQUEST, f"Invalid JSON body: {exc}", code="invalid_json"))
+        except Exception as exc:
+            self._error_response(ApiError(HTTPStatus.INTERNAL_SERVER_ERROR, f"Unhandled server error: {exc}", code="internal_error"))
 
     def _read_json_body(self) -> dict[str, Any]:
         content_length = int(self.headers.get("Content-Length", "0"))
@@ -1242,7 +1561,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             return {}
         decoded = json.loads(raw_body.decode("utf-8"))
         if not isinstance(decoded, dict):
-            raise ApiError(HTTPStatus.BAD_REQUEST, "JSON body must be an object")
+            raise ApiError(HTTPStatus.BAD_REQUEST, "JSON body must be an object", code="invalid_json")
         return decoded
 
     @staticmethod
@@ -1256,7 +1575,7 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _required_query(self, query: dict[str, list[str]], key: str) -> str:
         value = self._optional_query(query, key)
         if not value:
-            raise ApiError(HTTPStatus.BAD_REQUEST, f"Missing query param: {key}")
+            raise ApiError(HTTPStatus.BAD_REQUEST, f"Missing query param: {key}", code="missing_query_param")
         return value
 
     def _serve_file(self, relative_path: str) -> None:
@@ -1266,29 +1585,104 @@ class RequestHandler(BaseHTTPRequestHandler):
         try:
             file_path.relative_to(WEB_DIR)
         except ValueError:
-            self._json_response(HTTPStatus.FORBIDDEN, {"error": "Forbidden"})
+            self._error_response(ApiError(HTTPStatus.FORBIDDEN, "Forbidden", code="forbidden"))
             return
 
         if not file_path.exists() or not file_path.is_file():
-            self._json_response(HTTPStatus.NOT_FOUND, {"error": "Not found"})
+            self._error_response(ApiError(HTTPStatus.NOT_FOUND, "Not found", code="not_found"))
             return
 
         content_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
         data = file_path.read_bytes()
+        self._raw_response(HTTPStatus.OK, data, content_type)
 
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+    def _prepare_request(self, method: str, path: str) -> None:
+        incoming_trace = str(self.headers.get("X-Trace-Id") or self.headers.get("X-Request-Id") or "").strip()
+        self._trace_id = incoming_trace or str(uuid.uuid4())
+        self._request_method = method
+        self._request_path = path
+        self._request_started_at = time.monotonic()
+        metrics.inc_request(method, path)
+        self._log_event("request_started", method=method, path=path)
+
+    def _actor(self) -> str:
+        for key in ("X-Actor", "X-User", "X-Updated-By"):
+            value = str(self.headers.get(key) or "").strip()
+            if value:
+                return value
+        return "system"
+
+    def _token_from_headers(self) -> str:
+        token = str(self.headers.get("X-Components-Token") or self.headers.get("X-API-Token") or "").strip()
+        if token:
+            return token
+        auth_header = str(self.headers.get("Authorization") or "").strip()
+        if auth_header.lower().startswith("bearer "):
+            return auth_header[7:].strip()
+        return ""
+
+    def _require_components_write_access(self) -> None:
+        if not COMPONENTS_WRITE_TOKEN:
+            return
+        if self._token_from_headers() != COMPONENTS_WRITE_TOKEN:
+            raise ApiError(HTTPStatus.FORBIDDEN, "Forbidden", code="forbidden")
+
+    def _error_response(self, error: ApiError) -> None:
+        metrics.inc_error()
+        payload = {
+            "error": {
+                "code": error.code,
+                "message": error.message,
+                "details": error.details,
+            },
+            "trace_id": self._trace_id,
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+        }
+        self._json_response(error.status, payload)
 
     def _json_response(self, status_code: HTTPStatus, payload: dict[str, Any]) -> None:
+        if int(status_code) >= 400 and "error" in payload and not isinstance(payload.get("error"), dict):
+            payload = {
+                "error": {
+                    "code": "http_error",
+                    "message": str(payload.get("error")),
+                    "details": None,
+                },
+                "trace_id": getattr(self, "_trace_id", str(uuid.uuid4())),
+                "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            }
+            metrics.inc_error()
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self._raw_response(status_code, body, "application/json; charset=utf-8")
+
+    def _text_response(self, status_code: HTTPStatus, content: str, content_type: str = "text/plain; charset=utf-8") -> None:
+        body = content.encode("utf-8")
+        self._raw_response(status_code, body, content_type)
+
+    def _raw_response(self, status_code: HTTPStatus, body: bytes, content_type: str) -> None:
         self.send_response(status_code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Trace-Id", getattr(self, "_trace_id", ""))
         self.end_headers()
         self.wfile.write(body)
+        self._log_event("request_finished", status=int(status_code), bytes=len(body))
+
+    def _log_event(self, event: str, **fields: Any) -> None:
+        duration_ms = 0.0
+        started = getattr(self, "_request_started_at", None)
+        if isinstance(started, float):
+            duration_ms = round((time.monotonic() - started) * 1000.0, 2)
+        payload = {
+            "event": event,
+            "trace_id": getattr(self, "_trace_id", None),
+            "method": getattr(self, "_request_method", None),
+            "path": getattr(self, "_request_path", None),
+            "duration_ms": duration_ms,
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+        }
+        payload.update(fields)
+        LOGGER.info(json.dumps(payload, ensure_ascii=False))
 
     def log_message(self, format_string: str, *args: Any) -> None:
         return

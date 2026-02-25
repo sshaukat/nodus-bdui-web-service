@@ -1,0 +1,15 @@
+{
+  "name": "invalid-v0-2-missing-schema-version",
+  "schema_rules_profile": "v0_2_strict",
+  "schema": {
+    "type": "text",
+    "id": "title",
+    "value": "Hello"
+  },
+  "expect": {
+    "ok": false,
+    "decode_errors": 1,
+    "validation_errors": 0,
+    "applied_schema_version": "v0_2"
+  }
+}

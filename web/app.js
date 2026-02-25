@@ -7,6 +7,7 @@ const LOCALE_KEY = "nodus.locale";
 const THEME_KEY = "nodus.theme";
 const LAST_SCHEMA_KEY = "nodus.lastSchema";
 const COMPONENT_LIBRARY_KEY = "nodus.componentLibrary";
+const COMPONENT_WRITE_TOKEN_KEY = "nodus.componentsWriteToken";
 const SUPPORTED_LOCALES = ["ru", "en"];
 const SUPPORTED_THEMES = ["light", "dark"];
 const THEME_ICONS = {
@@ -840,10 +841,23 @@ async function apiRequest(path, options = {}) {
   const response = await fetch(path, options);
   const payload = await response.json();
   if (!response.ok) {
-    const message = payload && payload.error ? payload.error : `HTTP ${response.status}`;
+    const message =
+      payload && payload.error
+        ? payload.error.message || payload.error
+        : `HTTP ${response.status}`;
     throw new Error(message);
   }
   return payload;
+}
+
+function componentWriteHeaders(extra = {}) {
+  const token =
+    localStorage.getItem(COMPONENT_WRITE_TOKEN_KEY) ||
+    (window.NODUS_COMPONENTS_WRITE_TOKEN || "dev-components-token");
+  return {
+    "X-Components-Token": token,
+    ...extra,
+  };
 }
 
 function contextQuery() {
@@ -1374,7 +1388,7 @@ async function upsertComponentOnServer(item) {
   }
   return apiRequest(`/api/components/${encodeURIComponent(type)}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: componentWriteHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(item),
   });
 }
@@ -1386,6 +1400,7 @@ async function deleteComponentFromServer(type) {
   }
   return apiRequest(`/api/components/${encodeURIComponent(normalizedType)}`, {
     method: "DELETE",
+    headers: componentWriteHeaders(),
   });
 }
 

@@ -1,0 +1,17 @@
+{
+  "name": "valid-v0-1-alias",
+  "schema_rules_profile": "v0_1_default",
+  "schema_version": "v0_1",
+  "schema": {
+    "type": "text",
+    "id": "title",
+    "value": "Hello",
+    "viible": true
+  },
+  "expect": {
+    "ok": true,
+    "decode_errors": 0,
+    "validation_errors": 0,
+    "applied_schema_version": "v0_1"
+  }
+}
