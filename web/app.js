@@ -2046,13 +2046,67 @@ function renderNode(node) {
   if (!node || typeof node.type !== "string") {
     return null;
   }
+  if (!isNodeVisible(node)) {
+    return null;
+  }
 
   const component = window.NodusComponents.get(node.type);
   if (!component || typeof component.render !== "function") {
     return null;
   }
 
-  return component.render(componentRenderContext, node);
+  const element = component.render(componentRenderContext, node);
+  return applyNodeRuntimeState(element, node);
+}
+
+function isNodeVisible(node) {
+  if (!node || typeof node !== "object") {
+    return true;
+  }
+  if (typeof node.visible === "boolean") {
+    return node.visible;
+  }
+  if (typeof node.viible === "boolean") {
+    return node.viible;
+  }
+  return true;
+}
+
+function isNodeEnabled(node) {
+  if (!node || typeof node !== "object") {
+    return true;
+  }
+  if (typeof node.enabled === "boolean") {
+    return node.enabled;
+  }
+  return true;
+}
+
+function applyNodeRuntimeState(element, node) {
+  if (!element || typeof element !== "object") {
+    return element;
+  }
+
+  const enabled = isNodeEnabled(node);
+  element.classList.toggle("is-disabled", !enabled);
+
+  if ("disabled" in element) {
+    element.disabled = !enabled;
+  }
+
+  if (!enabled) {
+    element.setAttribute("aria-disabled", "true");
+    if (!("disabled" in element)) {
+      element.style.pointerEvents = "none";
+    }
+  } else {
+    element.removeAttribute("aria-disabled");
+    if (!("disabled" in element)) {
+      element.style.pointerEvents = "";
+    }
+  }
+
+  return element;
 }
 
 function dispatchAction(action, context) {

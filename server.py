@@ -65,6 +65,13 @@ class BduiRuntime:
         node: dict[str, Any] = {"type": node_type}
         if "id" in source:
             node["id"] = source.get("id")
+        if "visible" in source:
+            node["visible"] = source.get("visible")
+        elif "viible" in source:
+            # Backward-compatible alias for typo in payloads.
+            node["visible"] = source.get("viible")
+        if "enabled" in source:
+            node["enabled"] = source.get("enabled")
 
         layout = cls._decode_layout(source.get("layout"), f"{path}.layout", errors)
         if layout is not None:
@@ -185,6 +192,11 @@ class BduiRuntime:
 
     @classmethod
     def _validate_node(cls, node: dict[str, Any], path: str, errors: list[dict[str, str]], seen_ids: set[str]) -> None:
+        if "visible" in node and not isinstance(node.get("visible"), bool):
+            errors.append({"path": f"{path}.visible", "message": "Node field 'visible' must be boolean"})
+        if "enabled" in node and not isinstance(node.get("enabled"), bool):
+            errors.append({"path": f"{path}.enabled", "message": "Node field 'enabled' must be boolean"})
+
         node_id = node.get("id")
         if node_id is not None:
             if not isinstance(node_id, str) or not node_id.strip():

@@ -888,6 +888,11 @@ h2 {
   background: transparent;
 }
 
+.node.is-disabled {
+  opacity: 0.58;
+  filter: grayscale(0.18);
+}
+
 .node-column {
   display: flex;
   flex-direction: column;
