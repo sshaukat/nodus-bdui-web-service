@@ -46,7 +46,7 @@ class RuntimeRules:
     require_explicit_schema_version: bool
 
 
-def normalize_schema_version(value: str | None, fallback: str = "v0_1") -> str:
+def normalize_schema_version(value: str | None, fallback: str = "v0_2") -> str:
     raw = str(value or "").strip().lower().replace("-", "_")
     if raw in ALLOWED_SCHEMA_VERSIONS:
         return raw
@@ -57,11 +57,13 @@ def rules_for_profile(schema_rules_profile: str | None, schema_version: str | No
     profile = str(schema_rules_profile or "").strip().lower().replace("-", "_")
 
     if schema_version:
-        normalized_version = normalize_schema_version(schema_version, fallback="v0_1")
+        normalized_version = normalize_schema_version(schema_version, fallback="v0_2")
+    elif profile in {"v0_1", "v0_1_default"}:
+        normalized_version = "v0_1"
     elif profile in {"v0_2", "v0_2_strict"}:
         normalized_version = "v0_2"
     else:
-        normalized_version = "v0_1"
+        normalized_version = "v0_2"
 
     if normalized_version == "v0_2":
         return RuntimeRules(

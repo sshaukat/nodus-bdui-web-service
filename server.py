@@ -45,7 +45,7 @@ class BduiRuntime:
     def decode_validate(
         cls,
         schema: Any,
-        schema_rules_profile: str = "v0_1_default",
+        schema_rules_profile: str = "v0_2_strict",
         schema_version: str | None = None,
     ) -> dict[str, Any]:
         return runtime_decode_validate(
@@ -449,7 +449,7 @@ class RegistryStorage:
 
     def _extract_schema_version_from_content(self, content_json: Any) -> str | None:
         if isinstance(content_json, dict) and isinstance(content_json.get("schemaVersion"), str):
-            return self._normalize_schema_version(content_json.get("schemaVersion"), fallback="v0_1")
+            return self._normalize_schema_version(content_json.get("schemaVersion"), fallback="v0_2")
         return None
 
     def _ensure_content_schema_version(self, content_json: Any, schema_version: str) -> Any:
@@ -831,7 +831,7 @@ class RegistryStorage:
 
     def _default_schema_version_for_version(self, project_id: str, contract_id: str, version_id: str) -> str:
         meta = self._version_meta(project_id, contract_id, version_id)
-        return self._normalize_schema_version(meta.get("default_schema_version"), fallback="v0_1")
+        return self._normalize_schema_version(meta.get("default_schema_version"), fallback="v0_2")
 
     def list_screens(self, project_id: str, contract_id: str, version_id: str, include_deleted: bool = False) -> list[dict[str, Any]]:
         self._ensure_version(project_id, contract_id, version_id)
@@ -1027,7 +1027,7 @@ class RegistryStorage:
         self._ensure_version(project_id, contract_id, version_id)
 
         version_meta = self._load_json(self._version_meta_path(project_id, contract_id, version_id), {})
-        default_schema_version = self._normalize_schema_version(version_meta.get("default_schema_version"), fallback="v0_1")
+        default_schema_version = self._normalize_schema_version(version_meta.get("default_schema_version"), fallback="v0_2")
 
         screens = [
             item for item in self.list_screens(project_id, contract_id, version_id, include_deleted=False) if item.get("status") == "active"
@@ -1395,7 +1395,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                                 "node": None,
                                 "decodeErrors": [{"path": "$", "message": f"Invalid schema JSON: {exc}"}],
                                 "validationErrors": [],
-                                "appliedSchemaVersion": "v0_1",
+                                "appliedSchemaVersion": "v0_2",
                             },
                         )
                         return
@@ -1411,9 +1411,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                             f"schema_version must be one of {sorted(ALLOWED_SCHEMA_VERSIONS)}",
                             code="invalid_schema_version",
                         )
-                normalized_schema_version = normalize_schema_version(str(schema_version or ""), fallback="v0_1")
+                normalized_schema_version = normalize_schema_version(str(schema_version or ""), fallback="v0_2")
                 schema_rules_profile = str(
-                    payload.get("schema_rules_profile") or ("v0_2_strict" if normalized_schema_version == "v0_2" else "v0_1_default")
+                    payload.get("schema_rules_profile") or ("v0_1_default" if normalized_schema_version == "v0_1" else "v0_2_strict")
                 )
                 result = BduiRuntime.decode_validate(
                     schema,

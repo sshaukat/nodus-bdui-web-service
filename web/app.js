@@ -15,6 +15,7 @@ const THEME_ICONS = {
   dark: "/assets/moon.png",
 };
 const FORM_SCHEMA_TEMPLATE = {
+  schemaVersion: "v0_2",
   type: "column",
   id: "form",
   layout: {
@@ -137,7 +138,7 @@ const I18N = {
     componentInsertSuccess: "компонент добавлен:",
     editorResetToForm: "редактор очищен до шаблона формы",
     editorTitle: "Редактор схемы",
-    editorChip: "контракт v0.1",
+    editorChip: "контракт v0.2",
     previewTitle: "Предпросмотр",
     previewChip: "web-рендерер",
     validationTitle: "Валидация",
@@ -240,7 +241,7 @@ const I18N = {
     componentInsertSuccess: "component added:",
     editorResetToForm: "editor reset to form template",
     editorTitle: "Schema Editor",
-    editorChip: "v0.1 contract",
+    editorChip: "v0.2 contract",
     previewTitle: "Live Preview",
     previewChip: "web renderer",
     validationTitle: "Validation",
@@ -906,7 +907,9 @@ async function ensureInitialRegistry() {
       body: JSON.stringify({
         project_id: registryState.projectId,
         contract_id: registryState.contractId,
-        version_id: "v0-1",
+        version_id: "v0-2",
+        default_schema_version: "v0_2",
+        schema_rules_profile: "v0_2_strict",
       }),
     });
     versions =
@@ -2016,10 +2019,14 @@ function parseJsonWithLocations(source) {
 }
 
 async function renderSchema(rawSchema) {
+  const resolvedSchemaVersion =
+    rawSchema && typeof rawSchema === "object" && typeof rawSchema.schemaVersion === "string"
+      ? rawSchema.schemaVersion
+      : "v0_2";
   const response = await fetch("/api/decode-validate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ schema: rawSchema }),
+    body: JSON.stringify({ schema: rawSchema, schema_version: resolvedSchemaVersion }),
   });
 
   const payload = await response.json();

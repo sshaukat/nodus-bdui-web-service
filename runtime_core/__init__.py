@@ -9,7 +9,7 @@ from .validate import validate_node
 
 def decode_validate(
     schema: Any,
-    schema_rules_profile: str = "v0_1_default",
+    schema_rules_profile: str = "v0_2_strict",
     schema_version: str | None = None,
 ) -> dict[str, Any]:
     resolved_schema_version = schema_version
