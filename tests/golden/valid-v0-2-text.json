@@ -1,0 +1,17 @@
+{
+  "name": "valid-v0-2-text",
+  "schema_rules_profile": "v0_2_strict",
+  "schema_version": "v0_2",
+  "schema": {
+    "schemaVersion": "v0_2",
+    "type": "text",
+    "id": "title",
+    "value": "Hello"
+  },
+  "expect": {
+    "ok": true,
+    "decode_errors": 0,
+    "validation_errors": 0,
+    "applied_schema_version": "v0_2"
+  }
+}

@@ -100,6 +100,9 @@ For background mode:
 - Components are persisted on backend in files under `data/components/<type>.json`.
 - Frontend uses backend as source of truth (`/api/components`) and keeps `localStorage` cache as fallback.
 - On first load after update, local `localStorage` component catalog is migrated to backend if backend storage is empty.
+- Write operations are protected by token (`NODUS_COMPONENTS_WRITE_TOKEN`, header `X-Components-Token`).
+- Components support audit fields: `updated_by`, `change_note`.
+- Bulk transfer endpoints: `GET /api/components/export`, `POST /api/components/import?strategy=skip|overwrite|merge`.
 
 ## Common node flags
 
@@ -111,6 +114,19 @@ All node types support:
 Backward-compatibility:
 
 - typo alias `viible` is treated as `visible`.
+
+Schema versioning:
+
+- payloads and stored drafts/publications include `schemaVersion` / `schema_version`;
+- runtime decode/validate response returns `appliedSchemaVersion`;
+- `v0_2` requires explicit schema version.
+
+## Error envelope and metrics
+
+- API errors are returned as structured envelope:
+  `error.code`, `error.message`, `error.details`, `trace_id`, `timestamp`.
+- Every response includes `X-Trace-Id`.
+- Metrics endpoint: `GET /metrics`.
 
 ## Endpoints
 
@@ -131,6 +147,9 @@ Backward-compatibility:
 - `POST /api/components`
 - `PUT /api/components/<type>`
 - `DELETE /api/components/<type>`
+- `GET /api/components/export`
+- `POST /api/components/import?strategy=skip|overwrite|merge`
+- `GET /metrics`
 - `GET /schemas`
 - `GET /schema/<project>:<contract>:<version>:<screen>`
 - `GET /schema/<project>/<contract>/<version>/<screen>`
