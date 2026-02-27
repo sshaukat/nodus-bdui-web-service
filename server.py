@@ -20,7 +20,21 @@ from urllib.parse import parse_qs, unquote, urlparse
 from runtime_core import decode_validate as runtime_decode_validate
 from runtime_core.models import ALLOWED_SCHEMA_VERSIONS, normalize_schema_version
 
-WEB_DIR = Path(__file__).resolve().parent / "web"
+PROJECT_ROOT = Path(__file__).resolve().parent
+LEGACY_WEB_DIR = PROJECT_ROOT / "web"
+FRONTEND_DIST_DIR = PROJECT_ROOT / "frontend" / "dist"
+
+
+def resolve_web_dir() -> Path:
+    configured = str(os.getenv("NODUS_WEB_DIR", "")).strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    if FRONTEND_DIST_DIR.exists():
+        return FRONTEND_DIST_DIR
+    return LEGACY_WEB_DIR
+
+
+WEB_DIR = resolve_web_dir()
 DATA_DIR = Path(os.getenv("NODUS_DATA_DIR", str(Path(__file__).resolve().parent / "data"))).resolve()
 COMPONENTS_WRITE_TOKEN = str(os.getenv("NODUS_COMPONENTS_WRITE_TOKEN", "dev-components-token")).strip()
 
@@ -1589,6 +1603,13 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         if not file_path.exists() or not file_path.is_file():
+            # Serve SPA entrypoint for client-side routes when React build is active.
+            if not Path(clean_path).suffix:
+                index_file = (WEB_DIR / "index.html").resolve()
+                if index_file.exists() and index_file.is_file():
+                    data = index_file.read_bytes()
+                    self._raw_response(HTTPStatus.OK, data, "text/html; charset=utf-8")
+                    return
             self._error_response(ApiError(HTTPStatus.NOT_FOUND, "Not found", code="not_found"))
             return
 
@@ -1696,6 +1717,7 @@ def main() -> None:
 
     server = ThreadingHTTPServer((args.host, args.port), RequestHandler)
     print(f"Nodus BDUI server running at http://{args.host}:{args.port}")
+    print(f"Serving web assets from {WEB_DIR}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

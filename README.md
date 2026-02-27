@@ -48,7 +48,45 @@ Nodus BDUI Web Service - это сервис и веб-песочница для
 - хранятся публикации за последние 31 день (последний месяц);
 - очистка старых публикаций выполняется автоматически.
 
+## Frontend stack
+
+Frontend migrated to **React + TypeScript** (Vite, folder `frontend/`).
+
+- Production static bundle is built into `frontend/dist`.
+- Python server (`server.py`) serves `frontend/dist` automatically if it exists.
+- If `frontend/dist` is absent, server falls back to legacy static folder `web/`.
+
 ## Run
+
+### Frontend build (React + TypeScript)
+
+```bash
+cd bdui-web-service/frontend
+npm install
+npm run build
+```
+
+Then start backend/web server from repo root:
+
+```bash
+cd bdui-web-service
+./start-service.sh
+```
+
+### Frontend dev mode (Vite + API proxy)
+
+```bash
+cd bdui-web-service/frontend
+npm install
+npm run dev
+```
+
+Run backend API in parallel:
+
+```bash
+cd bdui-web-service
+./start-service.sh
+```
 
 ### One-time foreground run
 
