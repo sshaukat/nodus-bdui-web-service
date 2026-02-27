@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { CodeEditor } from "./components/CodeEditor";
 import { PreviewRenderer } from "./components/PreviewRenderer";
 import {
@@ -59,6 +59,20 @@ interface ComponentDraft {
   templateRaw: string;
 }
 
+interface PanelWidths {
+  components: number;
+  editor: number;
+}
+
+type SplitterSide = "left" | "right" | null;
+
+interface SplitterDragState {
+  side: Exclude<SplitterSide, null>;
+  startX: number;
+  startComponents: number;
+  startEditor: number;
+}
+
 const INITIAL_COMPONENT_DRAFT: ComponentDraft = {
   sourceType: null,
   type: "",
@@ -72,6 +86,20 @@ const INITIAL_COMPONENT_DRAFT: ComponentDraft = {
   templateRaw: "{}\n",
 };
 
+const PANEL_WIDTHS_KEY = "nodus.panelWidths.v1";
+const PANEL_DEFAULTS: PanelWidths = {
+  components: 410,
+  editor: 652,
+};
+const PANEL_LIMITS = {
+  componentsMin: 260,
+  componentsMax: 720,
+  editorMin: 360,
+  editorMax: 1100,
+  previewMin: 320,
+  splittersWidth: 20,
+};
+
 function actionToLine(action: string, value?: string): string {
   if (value) {
     return `[${action}] ${value}`;
@@ -81,6 +109,28 @@ function actionToLine(action: string, value?: string): string {
 
 function toJsonString(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function loadPanelWidths(): PanelWidths {
+  const saved = localStorage.getItem(PANEL_WIDTHS_KEY);
+  if (!saved) {
+    return PANEL_DEFAULTS;
+  }
+  try {
+    const parsed = JSON.parse(saved) as Partial<PanelWidths>;
+    const components = Number(parsed.components);
+    const editor = Number(parsed.editor);
+    return {
+      components: Number.isFinite(components) ? components : PANEL_DEFAULTS.components,
+      editor: Number.isFinite(editor) ? editor : PANEL_DEFAULTS.editor,
+    };
+  } catch {
+    return PANEL_DEFAULTS;
+  }
 }
 
 function fromStorageLocale(): Locale {
@@ -142,12 +192,24 @@ export default function App(): JSX.Element {
   const [actions, setActions] = useState<string[]>([]);
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
   const [isBusy, setIsBusy] = useState(false);
+  const [isEditorExpanded, setIsEditorExpanded] = useState(false);
+  const [panelWidths, setPanelWidths] = useState<PanelWidths>(() => loadPanelWidths());
+  const [activeSplitter, setActiveSplitter] = useState<SplitterSide>(null);
 
   const [componentLibrary, setComponentLibrary] = useState<ComponentItem[]>([]);
   const [isComponentModalOpen, setIsComponentModalOpen] = useState(false);
   const [componentDraft, setComponentDraft] = useState<ComponentDraft>(INITIAL_COMPONENT_DRAFT);
+  const workspaceRef = useRef<HTMLElement | null>(null);
+  const dragStateRef = useRef<SplitterDragState | null>(null);
 
   const tt = useCallback((key: Parameters<typeof t>[1]) => t(locale, key), [locale]);
+  const toggleEditorLayoutLabel = isEditorExpanded
+    ? locale === "ru"
+      ? "Вернуть исходный вид"
+      : "Restore default layout"
+    : locale === "ru"
+      ? "Скрыть верхние блоки"
+      : "Collapse top sections";
 
   const appendAction = useCallback((line: string) => {
     setActions((current) => [line, ...current].slice(0, 150));
@@ -299,6 +361,108 @@ export default function App(): JSX.Element {
   useEffect(() => {
     localStorage.setItem(COMPONENT_LIBRARY_KEY, JSON.stringify(componentLibrary));
   }, [componentLibrary]);
+
+  useEffect(() => {
+    localStorage.setItem(PANEL_WIDTHS_KEY, JSON.stringify(panelWidths));
+  }, [panelWidths]);
+
+  useEffect(() => {
+    const ensureWidthsFit = () => {
+      const workspace = workspaceRef.current;
+      if (!workspace) {
+        return;
+      }
+      const totalWidth = Math.max(0, workspace.clientWidth - PANEL_LIMITS.splittersWidth);
+      setPanelWidths((current) => {
+        let components = clamp(current.components, PANEL_LIMITS.componentsMin, PANEL_LIMITS.componentsMax);
+        let editor = clamp(current.editor, PANEL_LIMITS.editorMin, PANEL_LIMITS.editorMax);
+
+        const maxEditor = Math.max(PANEL_LIMITS.editorMin, totalWidth - components - PANEL_LIMITS.previewMin);
+        editor = Math.min(editor, maxEditor);
+
+        const maxComponents = Math.max(PANEL_LIMITS.componentsMin, totalWidth - editor - PANEL_LIMITS.previewMin);
+        components = Math.min(components, maxComponents);
+
+        if (components === current.components && editor === current.editor) {
+          return current;
+        }
+        return { components, editor };
+      });
+    };
+
+    ensureWidthsFit();
+    window.addEventListener("resize", ensureWidthsFit);
+    return () => window.removeEventListener("resize", ensureWidthsFit);
+  }, []);
+
+  useEffect(() => {
+    if (!activeSplitter) {
+      return;
+    }
+
+    const onMouseMove = (event: MouseEvent) => {
+      const drag = dragStateRef.current;
+      const workspace = workspaceRef.current;
+      if (!drag || !workspace) {
+        return;
+      }
+
+      const deltaX = event.clientX - drag.startX;
+      const totalWidth = Math.max(0, workspace.clientWidth - PANEL_LIMITS.splittersWidth);
+
+      if (drag.side === "left") {
+        const sum = drag.startComponents + drag.startEditor;
+
+        let nextComponents = clamp(
+          drag.startComponents + deltaX,
+          PANEL_LIMITS.componentsMin,
+          PANEL_LIMITS.componentsMax,
+        );
+        let nextEditor = sum - nextComponents;
+
+        if (nextEditor < PANEL_LIMITS.editorMin) {
+          nextEditor = PANEL_LIMITS.editorMin;
+          nextComponents = sum - nextEditor;
+        }
+        if (nextEditor > PANEL_LIMITS.editorMax) {
+          nextEditor = PANEL_LIMITS.editorMax;
+          nextComponents = sum - nextEditor;
+        }
+
+        const maxComponents = Math.max(PANEL_LIMITS.componentsMin, totalWidth - nextEditor - PANEL_LIMITS.previewMin);
+        nextComponents = Math.min(nextComponents, maxComponents);
+        nextEditor = sum - nextComponents;
+
+        setPanelWidths({
+          components: nextComponents,
+          editor: nextEditor,
+        });
+        return;
+      }
+
+      const maxEditor = Math.max(PANEL_LIMITS.editorMin, totalWidth - drag.startComponents - PANEL_LIMITS.previewMin);
+      const nextEditor = clamp(drag.startEditor + deltaX, PANEL_LIMITS.editorMin, Math.min(PANEL_LIMITS.editorMax, maxEditor));
+
+      setPanelWidths({
+        components: drag.startComponents,
+        editor: nextEditor,
+      });
+    };
+
+    const onMouseUp = () => {
+      setActiveSplitter(null);
+      dragStateRef.current = null;
+      document.body.classList.remove("is-resizing");
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      document.body.classList.remove("is-resizing");
+    };
+  }, [activeSplitter]);
 
   useEffect(() => {
     let isMounted = true;
@@ -736,8 +900,26 @@ export default function App(): JSX.Element {
     [appendAction, locale, schemaText, tt],
   );
 
+  const handleSplitterMouseDown = useCallback(
+    (side: Exclude<SplitterSide, null>, event: ReactMouseEvent<HTMLDivElement>) => {
+      if (window.matchMedia("(max-width: 1120px)").matches) {
+        return;
+      }
+      event.preventDefault();
+      dragStateRef.current = {
+        side,
+        startX: event.clientX,
+        startComponents: panelWidths.components,
+        startEditor: panelWidths.editor,
+      };
+      setActiveSplitter(side);
+      document.body.classList.add("is-resizing");
+    },
+    [panelWidths],
+  );
+
   return (
-    <div className="page-shell">
+    <div className={`page-shell ${isEditorExpanded ? "is-editor-expanded" : ""}`}>
       <div className="top-controls">
         <div className="lang-switch">
           <button
@@ -870,8 +1052,8 @@ export default function App(): JSX.Element {
         </p>
       </section>
 
-      <main className="workspace">
-        <section className="card components-card">
+      <main className="workspace" ref={workspaceRef}>
+        <section className="card components-card" style={{ flexBasis: `${panelWidths.components}px` }}>
           <div className="card-head">
             <h2>{tt("componentsTitle")}</h2>
             <div className="card-head-tools">
@@ -889,14 +1071,32 @@ export default function App(): JSX.Element {
                     <p className="component-item-desc">{localize(locale, item.description)}</p>
                   </div>
                   <div className="component-item-actions">
-                    <button className="btn btn-ghost component-add-btn" type="button" onClick={() => handleAddComponentToSchema(item)}>
-                      {tt("componentAddBtn")}
+                    <button
+                      className="btn btn-ghost component-add-btn component-action-icon"
+                      type="button"
+                      title={tt("componentAddBtn")}
+                      aria-label={tt("componentAddBtn")}
+                      onClick={() => handleAddComponentToSchema(item)}
+                    >
+                      +
                     </button>
-                    <button className="btn btn-ghost component-add-btn" type="button" onClick={() => openEditComponentModal(item)}>
-                      {tt("componentEditBtn")}
+                    <button
+                      className="btn btn-ghost component-add-btn component-action-icon"
+                      type="button"
+                      title={tt("componentEditBtn")}
+                      aria-label={tt("componentEditBtn")}
+                      onClick={() => openEditComponentModal(item)}
+                    >
+                      ✎
                     </button>
-                    <button className="btn btn-ghost component-add-btn" type="button" onClick={() => void handleComponentDelete(item)}>
-                      {tt("componentDeleteBtn")}
+                    <button
+                      className="btn btn-ghost component-add-btn component-action-icon"
+                      type="button"
+                      title={tt("componentDeleteBtn")}
+                      aria-label={tt("componentDeleteBtn")}
+                      onClick={() => void handleComponentDelete(item)}
+                    >
+                      ×
                     </button>
                   </div>
                 </div>
@@ -909,7 +1109,15 @@ export default function App(): JSX.Element {
           </div>
         </section>
 
-        <section className="card editor-card">
+        <div
+          className={`workspace-splitter ${activeSplitter === "left" ? "is-dragging" : ""}`}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={locale === "ru" ? "Изменить ширину каталога и редактора" : "Resize catalog and editor"}
+          onMouseDown={(event) => handleSplitterMouseDown("left", event)}
+        />
+
+        <section className="card editor-card" style={{ flexBasis: `${panelWidths.editor}px` }}>
           <div className="card-head">
             <h2>{tt("editorTitle")}</h2>
             <div className="card-head-tools">
@@ -919,11 +1127,28 @@ export default function App(): JSX.Element {
               <button className="btn btn-ghost editor-clear-btn" type="button" onClick={clearSchema}>
                 {tt("clearBtn")}
               </button>
+              <button
+                className={`btn btn-ghost editor-layout-toggle-btn ${isEditorExpanded ? "is-active" : ""}`}
+                type="button"
+                title={toggleEditorLayoutLabel}
+                aria-label={toggleEditorLayoutLabel}
+                onClick={() => setIsEditorExpanded((value) => !value)}
+              >
+                <span aria-hidden="true">{isEditorExpanded ? "▾" : "▴"}</span>
+              </button>
             </div>
           </div>
           <CodeEditor value={schemaText} onChange={setSchemaText} className="editor-host" />
           <p className="editor-file-info">{selectedScreen ? `${selectedScreen.name} (${selectedScreen.status})` : "-"}</p>
         </section>
+
+        <div
+          className={`workspace-splitter ${activeSplitter === "right" ? "is-dragging" : ""}`}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={locale === "ru" ? "Изменить ширину редактора и предпросмотра" : "Resize editor and preview"}
+          onMouseDown={(event) => handleSplitterMouseDown("right", event)}
+        />
 
         <section className="card preview-card">
           <div className="card-head">
