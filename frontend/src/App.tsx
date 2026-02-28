@@ -153,6 +153,11 @@ function newDefaultSchema(): string {
   return toJsonString(FORM_SCHEMA_TEMPLATE);
 }
 
+function loadLastSchema(): string {
+  const saved = localStorage.getItem(LAST_SCHEMA_KEY);
+  return ensureSchemaTemplate(saved || newDefaultSchema());
+}
+
 function componentDraftFromItem(item: ComponentItem): ComponentDraft {
   return {
     sourceType: item.type,
@@ -171,10 +176,8 @@ function componentDraftFromItem(item: ComponentItem): ComponentDraft {
 export default function App(): JSX.Element {
   const [locale, setLocale] = useState<Locale>(() => fromStorageLocale());
   const [theme, setTheme] = useState<ThemeMode>(() => fromStorageTheme());
-  const [schemaText, setSchemaText] = useState<string>(() => {
-    const saved = localStorage.getItem(LAST_SCHEMA_KEY);
-    return ensureSchemaTemplate(saved || newDefaultSchema());
-  });
+  const [schemaText, setSchemaText] = useState<string>(() => loadLastSchema());
+  const [lastSavedSchemaText, setLastSavedSchemaText] = useState<string>(() => loadLastSchema());
 
   const [projects, setProjects] = useState<Array<{ project_id: string; name: string }>>([]);
   const [contracts, setContracts] = useState<Array<{ contract_id: string; name: string }>>([]);
@@ -312,9 +315,10 @@ export default function App(): JSX.Element {
 
       if (loadScreen) {
         const selected = activeScreens.find((item) => item.screen_id === screenId);
-        if (selected?.content_raw) {
-          const nextRaw = ensureSchemaTemplate(selected.content_raw);
+        if (selected) {
+          const nextRaw = ensureSchemaTemplate(selected.content_raw || newDefaultSchema());
           setSchemaText(nextRaw);
+          setLastSavedSchemaText(nextRaw);
           localStorage.setItem(LAST_SCHEMA_KEY, nextRaw);
           await runRender(nextRaw);
         }
@@ -495,6 +499,7 @@ export default function App(): JSX.Element {
   );
 
   const isContextReady = Boolean(context.projectId && context.contractId && context.versionId && context.screenId);
+  const hasUnsavedSchemaChanges = isContextReady && schemaText !== lastSavedSchemaText;
 
   const handleThemeToggle = useCallback(() => {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
@@ -669,6 +674,7 @@ export default function App(): JSX.Element {
     setIsBusy(true);
     try {
       await updateScreen(context, { content_raw: schemaText });
+      setLastSavedSchemaText(schemaText);
       appendAction(actionToLine("system", `${tt("contextSaved")}: ${context.screenId}`));
       await syncHierarchy({ preferred: context, loadScreen: false });
     } catch (error) {
@@ -1038,7 +1044,11 @@ export default function App(): JSX.Element {
           <button className="btn btn-ghost context-btn-sm" type="button" onClick={() => void handleDeleteScreen()}>
             {tt("deleteBtn")}
           </button>
-          <button className="btn btn-ghost context-btn-sm" type="button" onClick={() => void handleSaveScreen()}>
+          <button
+            className={`btn context-btn-sm ${hasUnsavedSchemaChanges ? "btn-save-dirty" : "btn-ghost"}`}
+            type="button"
+            onClick={() => void handleSaveScreen()}
+          >
             {tt("saveScreenBtn")}
           </button>
           <button className="btn btn-ghost context-btn-sm" type="button" onClick={() => void handlePublish()}>
@@ -1134,7 +1144,12 @@ export default function App(): JSX.Element {
                 aria-label={toggleEditorLayoutLabel}
                 onClick={() => setIsEditorExpanded((value) => !value)}
               >
-                <span aria-hidden="true">{isEditorExpanded ? "▾" : "▴"}</span>
+                <img
+                  className="editor-layout-toggle-icon"
+                  src={isEditorExpanded ? "/assets/minimize-arrows.png" : "/assets/full-size.png"}
+                  alt=""
+                  aria-hidden="true"
+                />
               </button>
             </div>
           </div>
