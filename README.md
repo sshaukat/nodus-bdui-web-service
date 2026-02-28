@@ -53,8 +53,9 @@ Nodus BDUI Web Service - это сервис и веб-песочница для
 Frontend migrated to **React + TypeScript** (Vite, folder `frontend/`).
 
 - Production static bundle is built into `frontend/dist`.
-- Python server (`server.py`) serves `frontend/dist` automatically if it exists.
-- If `frontend/dist` is absent, server falls back to legacy static folder `web/`.
+- Python server (`server.py`) serves only `frontend/dist` (or custom path via `NODUS_WEB_DIR`).
+- Legacy static folder `web/` removed.
+- If `frontend/dist` is missing, static requests return `503 Service Unavailable` with a hint to run the frontend build.
 
 ## Run
 
@@ -66,7 +67,7 @@ npm install
 npm run build
 ```
 
-Then start backend/web server from repo root:
+Then start backend server from repo root:
 
 ```bash
 cd bdui-web-service
@@ -130,6 +131,8 @@ For background mode:
 - Click `Добавить / Add` to insert that JSON template into the current cursor position in the schema editor.
 - Open `JSON шаблон и поля / JSON template and fields` to inspect the exact JSON and field hints before inserting.
 - Save changes into current context with `Сохранить экран / Save Screen`.
+- `Сохранить экран / Save Screen` is highlighted while current JSON has unsaved changes and returns to normal state after a successful save.
+- The schema editor expand/collapse button switches icon by state: expand uses `full-size`, collapse uses `minimize-arrows`.
 
 ## Component Library: storage and editor
 

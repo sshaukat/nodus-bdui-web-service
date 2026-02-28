@@ -21,7 +21,6 @@ from runtime_core import decode_validate as runtime_decode_validate
 from runtime_core.models import ALLOWED_SCHEMA_VERSIONS, normalize_schema_version
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-LEGACY_WEB_DIR = PROJECT_ROOT / "web"
 FRONTEND_DIST_DIR = PROJECT_ROOT / "frontend" / "dist"
 
 
@@ -29,9 +28,7 @@ def resolve_web_dir() -> Path:
     configured = str(os.getenv("NODUS_WEB_DIR", "")).strip()
     if configured:
         return Path(configured).expanduser().resolve()
-    if FRONTEND_DIST_DIR.exists():
-        return FRONTEND_DIST_DIR
-    return LEGACY_WEB_DIR
+    return FRONTEND_DIST_DIR
 
 
 WEB_DIR = resolve_web_dir()
@@ -1594,6 +1591,13 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _serve_file(self, relative_path: str) -> None:
         clean_path = relative_path.split("?", 1)[0]
+        if not WEB_DIR.exists() or not WEB_DIR.is_dir():
+            self._text_response(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                "Frontend assets are not built. Run: cd frontend && npm install && npm run build",
+            )
+            return
+
         file_path = (WEB_DIR / clean_path).resolve()
 
         try:
@@ -1718,6 +1722,8 @@ def main() -> None:
     server = ThreadingHTTPServer((args.host, args.port), RequestHandler)
     print(f"Nodus BDUI server running at http://{args.host}:{args.port}")
     print(f"Serving web assets from {WEB_DIR}")
+    if not WEB_DIR.exists() or not WEB_DIR.is_dir():
+        print("WARNING: frontend assets are missing. Build with: cd frontend && npm install && npm run build")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
