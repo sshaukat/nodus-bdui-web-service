@@ -1,0 +1,49 @@
+{
+  "type": "column",
+  "id": "form",
+  "layout": {
+    "padding": { "top": 8, "right": 8, "bottom": 8, "left": 8 }
+  },
+  "children": [
+    {
+      "id": "title",
+      "type": "text",
+      "value": "Привет, Nodus"
+    },
+    {
+      "type": "input",
+      "id": "email",
+      "placeholder": "Введите email",
+      "onChange": {
+        "type": "log",
+        "value": "email changed: {{value}}"
+      }
+    },
+    {
+      "type": "row",
+      "justify": "left",
+      "gap": 12,
+      "wrap": "wrap",
+      "children": [
+        {
+          "type": "button",
+          "id": "submit",
+          "title": "Отправить",
+          "action": {
+            "type": "log",
+            "value": "submit pressed"
+          }
+        },
+        {
+          "type": "button",
+          "id": "goDocs",
+          "title": "Открыть docs",
+          "action": {
+            "type": "open_url",
+            "url": "https://example.com"
+          }
+        }
+      ]
+    }
+  ]
+}

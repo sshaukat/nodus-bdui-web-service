@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nodus Studio - Playground</title>
+    <meta
+      id="metaDescription"
+      name="description"
+      content="Nodus Studio: редактирование JSON-схем, валидация runtime-правил и live preview интерфейса."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="top-controls">
+        <div class="lang-switch">
+          <button id="langRuBtn" class="btn btn-lang is-active" type="button">
+            <img class="lang-flag" src="/assets/flag-ru.png" alt="" aria-hidden="true" />
+            <span>RU</span>
+          </button>
+          <button id="langEnBtn" class="btn btn-lang" type="button">
+            <img class="lang-flag" src="/assets/flag-en.png" alt="" aria-hidden="true" />
+            <span>EN</span>
+          </button>
+        </div>
+        <button id="themeToggleBtn" class="btn theme-toggle is-dark" type="button" aria-label="Переключить тему" title="Переключить тему">
+          <img id="themeToggleIcon" class="theme-toggle-icon" src="/assets/moon.png" alt="" aria-hidden="true" />
+        </button>
+      </div>
+
+      <header class="hero card">
+        <div class="hero-copy">
+          <div class="hero-top">
+            <p class="eyebrow">Nodus Studio</p>
+          </div>
+          <h1 data-i18n="heroTitle">Песочница Backend-Driven UI</h1>
+          <p class="hero-subtitle" data-i18n="heroSubtitle" data-i18n-html="true">
+            Собирай контракт экрана в JSON, проверяй runtime-правила и сразу смотри визуальный результат.
+          </p>
+        </div>
+
+      </header>
+
+      <section id="contextCard" class="card context-card">
+        <div class="card-head">
+          <h2 data-i18n="contextTitle">Контекст контракта</h2>
+          <span class="chip" data-i18n="contextChip">project / contract / version</span>
+        </div>
+        <div class="context-grid">
+          <label class="context-field">
+            <span data-i18n="projectLabel">Проект</span>
+            <div class="context-input-row">
+              <select id="projectSelect"></select>
+              <button id="newProjectBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="newBtn">Создать</button>
+            </div>
+          </label>
+          <label class="context-field">
+            <span data-i18n="contractLabel">Контракт</span>
+            <div class="context-input-row">
+              <select id="contractSelect"></select>
+              <button id="newContractBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="newBtn">Создать</button>
+            </div>
+          </label>
+          <label class="context-field">
+            <span data-i18n="versionLabel">Версия</span>
+            <div class="context-input-row">
+              <select id="versionSelect"></select>
+              <button id="newVersionBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="newBtn">Создать</button>
+            </div>
+          </label>
+          <label class="context-field">
+            <span data-i18n="screenLabel">Схема экрана</span>
+            <div class="context-input-row">
+              <select id="screenSelect"></select>
+              <button id="newScreenBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="newBtn">Создать</button>
+            </div>
+          </label>
+        </div>
+        <div class="context-actions">
+          <button id="contextLoadBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="loadBtn">Загрузить</button>
+          <button id="renameScreenBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="renameBtn">Переименовать</button>
+          <button id="toggleScreenStatusBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="toggleStatusBtn">Актив/Неактив</button>
+          <button id="deleteScreenBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="deleteBtn">Удалить</button>
+          <button id="saveScreenBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="saveScreenBtn">Сохранить экран</button>
+          <button id="publishVersionBtn" class="btn btn-ghost context-btn-sm" type="button" data-i18n="publishBtn">Публиковать</button>
+        </div>
+        <p id="contextInfo" class="editor-file-info"></p>
+      </section>
+
+      <main id="workspace" class="workspace">
+        <section id="componentsCard" class="card components-card">
+          <div class="card-head">
+            <h2 data-i18n="componentsTitle">Каталог компонентов</h2>
+            <div class="card-head-tools">
+              <button
+                id="newComponentBtn"
+                class="btn btn-ghost component-new-btn"
+                type="button"
+                data-i18n="componentNewBtn"
+              >
+                Новый
+              </button>
+            </div>
+          </div>
+          <div id="componentPaletteList" class="component-palette-list"></div>
+        </section>
+
+        <div class="workspace-splitter" role="separator" aria-orientation="vertical" aria-label="Resize panels"></div>
+
+        <section id="editorCard" class="card editor-card">
+          <div class="card-head">
+            <h2 data-i18n="editorTitle">Редактор схемы</h2>
+            <div class="card-head-tools">
+              <button id="formatBtn" class="btn btn-ghost editor-format-btn" type="button" data-i18n="formatBtn">Форматировать JSON</button>
+              <button id="clearEditorBtn" class="btn btn-ghost editor-clear-btn" type="button" data-i18n="clearBtn">Очистить</button>
+            </div>
+          </div>
+          <div id="jsonEditor" aria-label="Schema editor"></div>
+          <p id="editorFileInfo" class="editor-file-info"></p>
+        </section>
+
+        <div class="workspace-splitter" role="separator" aria-orientation="vertical" aria-label="Resize panels"></div>
+
+        <section id="previewCard" class="card preview-card">
+          <div class="card-head">
+            <h2 data-i18n="previewTitle">Предпросмотр</h2>
+            <div class="card-head-tools">
+              <button id="renderBtn" class="btn btn-ghost preview-refresh-btn" type="button" data-i18n="renderBtn">Обновить превью</button>
+            </div>
+          </div>
+          <div id="previewRoot" class="preview-root"></div>
+        </section>
+      </main>
+
+      <section class="telemetry">
+        <section class="card status-card">
+          <div class="card-head">
+            <h2 data-i18n="validationTitle">Валидация</h2>
+            <span class="chip chip-danger" data-i18n="validationChip">decode + validate</span>
+          </div>
+          <ul id="errorsList" class="list"></ul>
+        </section>
+
+        <section class="card status-card">
+          <div class="card-head">
+            <h2 data-i18n="actionTitle">Лента действий</h2>
+            <span class="chip chip-info" data-i18n="actionChip">локальный runtime</span>
+          </div>
+          <ul id="actionList" class="list"></ul>
+        </section>
+      </section>
+    </div>
+
+    <input id="jsonFileInput" class="file-input-hidden" type="file" accept=".json,application/json" />
+    <div id="componentEditorModal" class="modal-backdrop is-hidden" role="dialog" aria-modal="true" aria-labelledby="componentEditorTitle">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3 id="componentEditorTitle" data-i18n="componentEditorTitle">Редактор компонента</h3>
+        </div>
+        <form id="componentEditorForm" class="component-editor-form">
+          <div class="component-editor-grid component-editor-top-grid">
+            <label class="context-field">
+              <span data-i18n="componentFieldType">Type</span>
+              <input id="componentFieldType" type="text" required />
+            </label>
+            <label class="context-field">
+              <span data-i18n="componentFieldMode">Mode</span>
+              <select id="componentFieldMode">
+                <option value="" data-i18n="componentModeInsert">Вставка</option>
+                <option value="replace-schema" data-i18n="componentModeReplace">Заменить схему</option>
+              </select>
+            </label>
+          </div>
+          <div class="component-editor-grid">
+            <label class="context-field">
+              <span data-i18n="componentFieldTitleRu">Title (RU)</span>
+              <input id="componentFieldTitleRu" type="text" required />
+            </label>
+            <label class="context-field">
+              <span data-i18n="componentFieldTitleEn">Title (EN)</span>
+              <input id="componentFieldTitleEn" type="text" required />
+            </label>
+          </div>
+          <div class="component-editor-grid">
+            <label class="context-field">
+              <span data-i18n="componentFieldDescRu">Description (RU)</span>
+              <textarea id="componentFieldDescRu" rows="2" required></textarea>
+            </label>
+            <label class="context-field">
+              <span data-i18n="componentFieldDescEn">Description (EN)</span>
+              <textarea id="componentFieldDescEn" rows="2" required></textarea>
+            </label>
+          </div>
+          <div class="component-editor-grid">
+            <label class="context-field">
+              <span data-i18n="componentFieldFieldsRu">Fields (RU)</span>
+              <textarea id="componentFieldFieldsRu" rows="2"></textarea>
+            </label>
+            <label class="context-field">
+              <span data-i18n="componentFieldFieldsEn">Fields (EN)</span>
+              <textarea id="componentFieldFieldsEn" rows="2"></textarea>
+            </label>
+          </div>
+          <label class="context-field component-template-field">
+            <span data-i18n="componentFieldTemplate">Template JSON</span>
+            <div id="componentTemplateEditor" class="component-template-editor" aria-label="Component template JSON editor"></div>
+          </label>
+          <div class="modal-actions">
+            <button id="componentEditorCancelBtn" class="btn btn-ghost" type="button" data-i18n="cancelBtn">Отмена</button>
+            <button id="componentEditorSaveBtn" class="btn btn-ghost" type="submit" data-i18n="saveBtn">Сохранить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="/components/registry.js"></script>
+    <script src="/components/shared.js"></script>
+    <script src="/components/column.js"></script>
+    <script src="/components/row.js"></script>
+    <script src="/components/box.js"></script>
+    <script src="/components/text.js"></script>
+    <script src="/components/button.js"></script>
+    <script src="/components/iconbutton.js"></script>
+    <script src="/components/navbar.js"></script>
+    <script src="/components/spacer.js"></script>
+    <script src="/components/input.js"></script>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
