@@ -1,0 +1,38 @@
+{
+  "name": "valid-v0-2-custom-nav-bar",
+  "schema_rules_profile": "v0_2_strict",
+  "schema_version": "v0_2",
+  "schema": {
+    "schemaVersion": "v0_2",
+    "type": "custom-nav-bar",
+    "id": "header",
+    "title": "Payments",
+    "subtitle": "Overview",
+    "titleHorizontalAlign": "center",
+    "leftIcon": "arrow-left",
+    "actions": [
+      {
+        "icon": "search",
+        "title": "Search",
+        "action": {
+          "type": "log",
+          "value": "search"
+        }
+      },
+      {
+        "icon": "custom:help",
+        "title": "Help",
+        "action": {
+          "type": "log",
+          "value": "help"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "ok": true,
+    "decode_errors": 0,
+    "validation_errors": 0,
+    "applied_schema_version": "v0_2"
+  }
+}

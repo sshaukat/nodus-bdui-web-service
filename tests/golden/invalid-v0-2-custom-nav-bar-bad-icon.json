@@ -1,0 +1,22 @@
+{
+  "name": "invalid-v0-2-custom-nav-bar-bad-icon",
+  "schema_rules_profile": "v0_2_strict",
+  "schema_version": "v0_2",
+  "schema": {
+    "schemaVersion": "v0_2",
+    "type": "custom-nav-bar",
+    "id": "header",
+    "actions": [
+      {
+        "icon": "custom:../bad",
+        "title": "Bad"
+      }
+    ]
+  },
+  "expect": {
+    "ok": false,
+    "decode_errors": 1,
+    "validation_errors": 0,
+    "applied_schema_version": "v0_2"
+  }
+}

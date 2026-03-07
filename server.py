@@ -18,7 +18,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from runtime_core import decode_validate as runtime_decode_validate
-from runtime_core.models import ALLOWED_SCHEMA_VERSIONS, normalize_schema_version
+from runtime_core.models import ALLOWED_ICONBUTTON_ICONS, ALLOWED_SCHEMA_VERSIONS, normalize_custom_icon_name, normalize_schema_version
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 FRONTEND_DIST_DIR = PROJECT_ROOT / "frontend" / "dist"
@@ -33,6 +33,8 @@ def resolve_web_dir() -> Path:
 
 WEB_DIR = resolve_web_dir()
 DATA_DIR = Path(os.getenv("NODUS_DATA_DIR", str(Path(__file__).resolve().parent / "data"))).resolve()
+CUSTOM_ICONS_DIR = Path(os.getenv("NODUS_CUSTOM_ICONS_DIR", str(DATA_DIR / "icons" / "custom"))).resolve()
+ALLOWED_CUSTOM_ICON_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp"}
 COMPONENTS_WRITE_TOKEN = str(os.getenv("NODUS_COMPONENTS_WRITE_TOKEN", "dev-components-token")).strip()
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -49,7 +51,7 @@ class ApiError(Exception):
 
 
 class BduiRuntime:
-    NODE_TYPES = {"column", "row", "box", "text", "button", "iconbutton", "spacer", "input"}
+    NODE_TYPES = {"column", "row", "box", "text", "button", "iconbutton", "spacer", "input", "navbar", "custom-nav-bar"}
     ACTION_TYPES = {"log", "open_url", "navigate"}
 
     @classmethod
@@ -403,6 +405,7 @@ class RegistryStorage:
         self.components_dir = self.base_dir / "components"
         self.projects_dir.mkdir(parents=True, exist_ok=True)
         self.components_dir.mkdir(parents=True, exist_ok=True)
+        CUSTOM_ICONS_DIR.mkdir(parents=True, exist_ok=True)
         self.cleanup_old_publications()
 
     @staticmethod
@@ -538,6 +541,18 @@ class RegistryStorage:
         text = str(value or fallback).strip()
         return {"ru": text, "en": text}
 
+    @staticmethod
+    def _default_component_template_id(component_type: str) -> str:
+        normalized = str(component_type or "").strip().lower()
+        return f"{normalized}_1" if normalized else "component_1"
+
+    def _normalize_component_template(self, template: Any, component_type: str) -> dict[str, Any]:
+        normalized: dict[str, Any] = dict(template) if isinstance(template, dict) else {}
+        normalized["type"] = component_type
+        current_id = str(normalized.get("id") or "").strip()
+        normalized["id"] = current_id or self._default_component_template_id(component_type)
+        return normalized
+
     def _normalize_component_payload(
         self,
         payload: dict[str, Any],
@@ -557,9 +572,25 @@ class RegistryStorage:
                 raise ApiError(HTTPStatus.BAD_REQUEST, "component mode must be replace-schema")
             mode = "replace-schema"
 
-        template = payload.get("template", {})
-        if template is None:
-            template = {}
+        template = self._normalize_component_template(payload.get("template", {}), ctype)
+        template_raw_value = payload.get("template_raw")
+        template_raw: str
+        template_parse_error: str | None = None
+
+        if template_raw_value is None:
+            template_raw = json.dumps(template, ensure_ascii=False, indent=2) + "\n"
+        else:
+            template_raw = str(template_raw_value)
+            try:
+                parsed_raw = json.loads(template_raw)
+            except json.JSONDecodeError as exc:
+                template_parse_error = f"Invalid template JSON: {exc}"
+            else:
+                if isinstance(parsed_raw, dict):
+                    template = self._normalize_component_template(parsed_raw, ctype)
+                    template_raw = json.dumps(template, ensure_ascii=False, indent=2) + "\n"
+                else:
+                    template_parse_error = "template JSON root must be an object"
 
         result: dict[str, Any] = {
             "type": ctype,
@@ -567,6 +598,7 @@ class RegistryStorage:
             "description": self._normalize_locale_field(payload.get("description"), ctype),
             "fields": self._normalize_locale_field(payload.get("fields"), ""),
             "template": template,
+            "template_raw": template_raw,
             "updated_by": str(payload.get("updated_by") or "system"),
         }
         change_note = str(payload.get("change_note") or "").strip()
@@ -574,6 +606,8 @@ class RegistryStorage:
             result["change_note"] = change_note
         if mode:
             result["mode"] = mode
+        if template_parse_error:
+            result["template_parse_error"] = template_parse_error
         return result
 
     def list_components(self) -> list[dict[str, Any]]:
@@ -682,6 +716,10 @@ class RegistryStorage:
                     if not isinstance(existing, dict):
                         existing = {}
                     merged_payload = self._deep_merge_dicts(existing, incoming)
+                    # If template was patched through structured payload, do not keep stale template_raw from existing component.
+                    if "template" in incoming and "template_raw" not in incoming:
+                        merged_payload.pop("template_raw", None)
+                        merged_payload.pop("template_parse_error", None)
                     merged_payload["type"] = path.stem
                     normalized = self._normalize_component_payload(merged_payload, component_type=path.stem)
 
@@ -1349,6 +1387,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._json_response(HTTPStatus.OK, storage.export_components())
                 return
 
+            if path == "/api/icons":
+                self._json_response(HTTPStatus.OK, self._icons_payload())
+                return
+
             if path == "/schemas":
                 project_id = self._optional_query(query, "project")
                 contract_id = self._optional_query(query, "contract")
@@ -1375,6 +1417,10 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             if path == "/":
                 self._serve_file("index.html")
+                return
+
+            if path.startswith("/assets/icons/custom/"):
+                self._serve_custom_icon(path)
                 return
 
             relative_path = path.lstrip("/") or "index.html"
@@ -1588,6 +1634,83 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not value:
             raise ApiError(HTTPStatus.BAD_REQUEST, f"Missing query param: {key}", code="missing_query_param")
         return value
+
+    @staticmethod
+    def _custom_icon_candidates() -> list[dict[str, Any]]:
+        if not CUSTOM_ICONS_DIR.exists():
+            return []
+
+        candidates: dict[str, dict[str, Any]] = {}
+        for path in sorted(CUSTOM_ICONS_DIR.glob("*")):
+            if not path.is_file():
+                continue
+            ext = path.suffix.lower()
+            if ext not in ALLOWED_CUSTOM_ICON_EXTENSIONS:
+                continue
+
+            normalized_name = normalize_custom_icon_name(path.stem)
+            if not normalized_name:
+                continue
+
+            existing = candidates.get(normalized_name)
+            # Prefer SVG when multiple formats for the same icon name are present.
+            if existing and existing.get("ext") == ".svg":
+                continue
+            if existing and ext != ".svg":
+                continue
+
+            candidates[normalized_name] = {
+                "name": normalized_name,
+                "source": "custom",
+                "ext": ext,
+                "url": f"/assets/icons/custom/{normalized_name}{ext}",
+            }
+
+        return [candidates[name] for name in sorted(candidates)]
+
+    def _icons_payload(self) -> dict[str, Any]:
+        return {
+            "library": sorted(ALLOWED_ICONBUTTON_ICONS),
+            "custom": self._custom_icon_candidates(),
+        }
+
+    @staticmethod
+    def _resolve_custom_icon_file(request_path: str) -> Path:
+        prefix = "/assets/icons/custom/"
+        relative = request_path[len(prefix) :].split("?", 1)[0]
+        if not relative or "/" in relative or "\\" in relative:
+            raise ApiError(HTTPStatus.BAD_REQUEST, "Invalid custom icon path", code="invalid_icon_path")
+
+        requested = Path(relative)
+        ext = requested.suffix.lower()
+        normalized_name = normalize_custom_icon_name(requested.stem if ext else requested.name)
+        if not normalized_name:
+            raise ApiError(HTTPStatus.BAD_REQUEST, "Invalid custom icon name", code="invalid_icon_name")
+
+        if ext:
+            if ext not in ALLOWED_CUSTOM_ICON_EXTENSIONS:
+                raise ApiError(HTTPStatus.BAD_REQUEST, "Unsupported custom icon extension", code="invalid_icon_extension")
+            candidates = [CUSTOM_ICONS_DIR / f"{normalized_name}{ext}"]
+        else:
+            ordered_extensions = [".svg", ".png", ".webp", ".jpg", ".jpeg"]
+            candidates = [CUSTOM_ICONS_DIR / f"{normalized_name}{candidate_ext}" for candidate_ext in ordered_extensions]
+
+        custom_root = CUSTOM_ICONS_DIR.resolve()
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            try:
+                resolved.relative_to(custom_root)
+            except ValueError:
+                continue
+            if resolved.exists() and resolved.is_file():
+                return resolved
+
+        raise ApiError(HTTPStatus.NOT_FOUND, "Custom icon not found", code="icon_not_found")
+
+    def _serve_custom_icon(self, request_path: str) -> None:
+        file_path = self._resolve_custom_icon_file(request_path)
+        content_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+        self._raw_response(HTTPStatus.OK, file_path.read_bytes(), content_type)
 
     def _serve_file(self, relative_path: str) -> None:
         clean_path = relative_path.split("?", 1)[0]

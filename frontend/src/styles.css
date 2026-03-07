@@ -714,6 +714,25 @@ body.is-resizing {
 .component-template-field {
   flex: 1 1 auto;
   min-height: 0;
+  gap: 8px;
+}
+
+.component-template-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.component-template-head > span {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.component-template-format-btn {
+  padding: 7px 10px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .component-template-editor {
@@ -731,6 +750,15 @@ body.is-resizing {
 .component-template-editor:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent), 0 0 0 6px rgba(65, 199, 255, 0.12);
+}
+
+.component-template-editor.has-error {
+  border-color: var(--error-item-border);
+  box-shadow: 0 0 0 1px rgba(224, 94, 112, 0.24);
+}
+
+[data-theme="dark"] .component-template-editor.has-error {
+  box-shadow: 0 0 0 1px rgba(255, 125, 125, 0.22);
 }
 
 .component-template-editor .cm-editor {
@@ -756,12 +784,24 @@ body.is-resizing {
   border-right: 1px solid var(--editor-border);
 }
 
+.component-template-error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--error-item-border);
+  background: var(--error-item-bg);
+  color: var(--error-item-text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .modal-actions {
   display: inline-flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 0;
-  padding-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
   flex: 0 0 auto;
   position: static;
   background: transparent;
@@ -783,6 +823,24 @@ body.is-resizing {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.editor-card .card-head {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.editor-card .card-head > h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.editor-card .card-head-tools {
+  margin-left: auto;
+  flex: 0 1 auto;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .editor-clear-btn {
@@ -945,7 +1003,7 @@ h2 {
 
 .node-navbar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: var(--navbar-side-width, 34px) minmax(0, 1fr) var(--navbar-side-width, 34px);
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -953,18 +1011,51 @@ h2 {
   border-radius: 14px;
   background: var(--node-bg);
   padding: 10px 12px;
+  min-height: 56px;
+}
+
+.node-navbar--title-start {
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
 .node-navbar-left,
 .node-navbar-actions {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 34px;
+}
+
+.node-navbar-left {
+  justify-self: start;
+}
+
+.node-navbar-actions {
+  justify-self: end;
 }
 
 .node-navbar-center {
   min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.node-navbar--title-start .node-navbar-center {
+  text-align: left;
+}
+
+.node-navbar--title-center .node-navbar-center {
   text-align: center;
+}
+
+.node-navbar--center-content .node-navbar-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.node-navbar--title-start.node-navbar--center-content .node-navbar-center {
+  justify-content: flex-start;
 }
 
 .node-navbar-title {
@@ -973,6 +1064,8 @@ h2 {
   font-weight: 700;
   font-size: 18px;
   line-height: 1.2;
+  max-width: 100%;
+  display: block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -983,6 +1076,21 @@ h2 {
   color: var(--text-soft);
   font-size: 12px;
   line-height: 1.2;
+  max-width: 100%;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-navbar--single-line .node-navbar-title {
+  line-height: 1.55;
+}
+
+.node-navbar-placeholder {
+  display: inline-block;
+  width: 34px;
+  height: 34px;
 }
 
 .node-navbar-icon-button {
@@ -1030,6 +1138,12 @@ h2 {
 .node-icon-button-svg {
   width: 19px;
   height: 19px;
+}
+
+.node-icon-custom {
+  width: 19px;
+  height: 19px;
+  object-fit: contain;
 }
 
 .node-input {
@@ -1152,7 +1266,7 @@ h2 {
     flex-direction: column;
   }
 
-  #jsonEditor,
+  .editor-host,
   .component-palette-list,
   .preview-root {
     min-height: 400px;
@@ -1219,6 +1333,11 @@ h2 {
   .component-editor-top-grid {
     grid-template-columns: 1fr;
   }
+
+  .editor-host,
+  .preview-root {
+    min-height: 320px;
+  }
 }
 
 #root {
@@ -1247,6 +1366,29 @@ h2 {
 
 .editor-host .cm-scroller {
   overflow: auto;
+}
+
+/* Keep JSON editor visible in stacked (mobile/tablet) layout. */
+@media (max-width: 1120px) {
+  .editor-host {
+    height: 400px;
+    min-height: 400px;
+  }
+
+  .editor-host .cm-editor {
+    min-height: 400px;
+  }
+}
+
+@media (max-width: 680px) {
+  .editor-host {
+    height: 320px;
+    min-height: 320px;
+  }
+
+  .editor-host .cm-editor {
+    min-height: 320px;
+  }
 }
 
 .preview-error-note {

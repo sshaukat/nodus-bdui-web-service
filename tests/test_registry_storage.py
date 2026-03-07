@@ -180,6 +180,68 @@ class RegistryStorageTest(unittest.TestCase):
         with self.assertRaises(ApiError):
             self.storage.publish_version({"project_id": "demo", "contract_id": "main", "version_id": "v0-1"})
 
+    def test_publish_allows_custom_nav_bar(self):
+        self.storage.create_project({"project_id": "demo", "name": "Demo"})
+        self.storage.create_contract({"project_id": "demo", "contract_id": "main", "name": "Main"})
+        self.storage.create_version({"project_id": "demo", "contract_id": "main", "version_id": "v0-2"})
+        self.storage.create_screen(
+            {
+                "project_id": "demo",
+                "contract_id": "main",
+                "version_id": "v0-2",
+                "screen_id": "home",
+                "name": "Home",
+                "content_json": {
+                    "schemaVersion": "v0_2",
+                    "type": "column",
+                    "id": "form",
+                    "children": [
+                        {
+                            "type": "custom-nav-bar",
+                            "id": "header",
+                            "title": "Main",
+                            "titleHorizontalAlign": "center",
+                            "actions": [{"icon": "custom:help", "title": "Help", "action": {"type": "log", "value": "help"}}],
+                        }
+                    ],
+                },
+            }
+        )
+
+        publication = self.storage.publish_version({"project_id": "demo", "contract_id": "main", "version_id": "v0-2"})
+        self.assertEqual(publication["version_id"], "v0-2")
+        resolved = self.storage.get_published_schema_by_parts("demo", "main", "v0-2", "home")
+        self.assertEqual(resolved["screen_id"], "home")
+
+    def test_publish_blocks_invalid_custom_nav_bar(self):
+        self.storage.create_project({"project_id": "demo", "name": "Demo"})
+        self.storage.create_contract({"project_id": "demo", "contract_id": "main", "name": "Main"})
+        self.storage.create_version({"project_id": "demo", "contract_id": "main", "version_id": "v0-2"})
+        self.storage.create_screen(
+            {
+                "project_id": "demo",
+                "contract_id": "main",
+                "version_id": "v0-2",
+                "screen_id": "home",
+                "name": "Home",
+                "content_json": {
+                    "schemaVersion": "v0_2",
+                    "type": "column",
+                    "id": "form",
+                    "children": [
+                        {
+                            "type": "custom-nav-bar",
+                            "id": "header",
+                            "titleHorizontalAlign": "diagonal",
+                        }
+                    ],
+                },
+            }
+        )
+
+        with self.assertRaises(ApiError):
+            self.storage.publish_version({"project_id": "demo", "contract_id": "main", "version_id": "v0-2"})
+
 
 if __name__ == "__main__":
     unittest.main()

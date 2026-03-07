@@ -144,6 +144,22 @@ For background mode:
 - Write operations are protected by token (`NODUS_COMPONENTS_WRITE_TOKEN`, header `X-Components-Token`).
 - Components support audit fields: `updated_by`, `change_note`.
 - Bulk transfer endpoints: `GET /api/components/export`, `POST /api/components/import?strategy=skip|overwrite|merge`.
+- `custom-nav-bar` is supported as a base component with parser normalization to canonical `navbar`.
+- `custom-nav-bar` supports left button config, title/subtitle alignment (`start|center`), center slot (`centerContent`), and right actions.
+
+## Custom icons
+
+- Custom icon storage directory: `data/icons/custom` (override: `NODUS_CUSTOM_ICONS_DIR`).
+- Allowed file extensions: `.svg`, `.png`, `.jpg`, `.jpeg`, `.webp`.
+- Allowed icon name regex: `^[a-z0-9][a-z0-9._-]{0,63}$`.
+- Icon reference formats:
+  - library: `"menu"` or `"library:menu"`
+  - custom: `"custom:help"` or `{ "source": "custom", "name": "help" }`
+- Custom icon endpoints:
+  - `GET /api/icons`
+  - `GET /assets/icons/custom/<name>`
+  - `GET /assets/icons/custom/<name>.<ext>`
+- Missing or broken custom icon falls back to `menu` icon in preview.
 
 ## Common node flags
 
@@ -190,6 +206,9 @@ Schema versioning:
 - `DELETE /api/components/<type>`
 - `GET /api/components/export`
 - `POST /api/components/import?strategy=skip|overwrite|merge`
+- `GET /api/icons`
+- `GET /assets/icons/custom/<name>`
+- `GET /assets/icons/custom/<name>.<ext>`
 - `GET /metrics`
 - `GET /schemas`
 - `GET /schema/<project>:<contract>:<version>:<screen>`

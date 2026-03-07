@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
-NODE_TYPES = {"column", "row", "box", "text", "button", "iconbutton", "spacer", "input", "navbar"}
+NODE_TYPES = {"column", "row", "box", "text", "button", "iconbutton", "spacer", "input", "navbar", "custom-nav-bar"}
 ACTION_TYPES = {"log", "open_url", "navigate"}
 
 ALLOWED_ROW_JUSTIFY = {
@@ -36,6 +37,9 @@ ALLOWED_ICONBUTTON_ICONS = {
     "menu",
 }
 
+ALLOWED_NAVBAR_TITLE_ALIGN = {"start", "center"}
+CUSTOM_ICON_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+
 ALLOWED_SCHEMA_VERSIONS = {"v0_1", "v0_2"}
 
 
@@ -51,6 +55,15 @@ def normalize_schema_version(value: str | None, fallback: str = "v0_2") -> str:
     if raw in ALLOWED_SCHEMA_VERSIONS:
         return raw
     return fallback
+
+
+def normalize_custom_icon_name(value: str | None) -> str | None:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return None
+    if not CUSTOM_ICON_NAME_RE.fullmatch(raw):
+        return None
+    return raw
 
 
 def rules_for_profile(schema_rules_profile: str | None, schema_version: str | None) -> RuntimeRules:

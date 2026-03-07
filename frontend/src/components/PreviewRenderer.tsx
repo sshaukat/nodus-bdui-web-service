@@ -1,4 +1,4 @@
-import { memo, type CSSProperties } from "react";
+import { memo, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { BduiAction, BduiNode, Layout } from "../types";
 
 interface PreviewRendererProps {
@@ -115,9 +115,7 @@ function resolveRowCrossAlign(node: BduiNode): CSSProperties["alignItems"] {
   return "center";
 }
 
-function iconButton(iconNameRaw: string, title: string): JSX.Element {
-  const iconName = iconNameRaw.toLowerCase();
-  const path = ICONS[iconName] || ICONS.menu;
+function svgIcon(path: string, title: string): JSX.Element {
   return (
     <>
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" className="node-icon-button-svg">
@@ -125,6 +123,283 @@ function iconButton(iconNameRaw: string, title: string): JSX.Element {
       </svg>
       <span className="sr-only">{title}</span>
     </>
+  );
+}
+
+function normalizeCustomIconName(raw: string): string | null {
+  const normalized = raw.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(normalized)) {
+    return null;
+  }
+  return normalized;
+}
+
+function resolveIconReference(iconRaw: unknown): { kind: "library" | "custom"; name: string } {
+  if (typeof iconRaw === "string") {
+    const normalized = iconRaw.trim().toLowerCase();
+    if (!normalized) {
+      return { kind: "library", name: "menu" };
+    }
+    if (normalized.startsWith("custom:")) {
+      const customName = normalizeCustomIconName(normalized.slice("custom:".length));
+      return customName ? { kind: "custom", name: customName } : { kind: "library", name: "menu" };
+    }
+    if (normalized.startsWith("library:")) {
+      return { kind: "library", name: normalized.slice("library:".length) || "menu" };
+    }
+    return { kind: "library", name: normalized };
+  }
+
+  if (iconRaw && typeof iconRaw === "object") {
+    const record = iconRaw as Record<string, unknown>;
+    if (record.icon !== undefined) {
+      return resolveIconReference(record.icon);
+    }
+
+    const source = String(record.source || "library").trim().toLowerCase();
+    const name = String(record.name || "").trim().toLowerCase();
+
+    if (source === "custom") {
+      const customName = normalizeCustomIconName(name);
+      return customName ? { kind: "custom", name: customName } : { kind: "library", name: "menu" };
+    }
+
+    return { kind: "library", name: name || "menu" };
+  }
+
+  return { kind: "library", name: "menu" };
+}
+
+function CustomIcon({ name, title }: { name: string; title: string }): JSX.Element {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return svgIcon(ICONS.menu, title);
+  }
+
+  return (
+    <>
+      <img
+        src={`/assets/icons/custom/${encodeURIComponent(name)}`}
+        alt=""
+        aria-hidden="true"
+        className="node-icon-custom"
+        onError={() => setFailed(true)}
+      />
+      <span className="sr-only">{title}</span>
+    </>
+  );
+}
+
+function iconButton(iconRaw: unknown, title: string): JSX.Element {
+  const icon = resolveIconReference(iconRaw);
+  if (icon.kind === "custom") {
+    return <CustomIcon name={icon.name} title={title} />;
+  }
+  return svgIcon(ICONS[icon.name] || ICONS.menu, title);
+}
+
+function isNodeObject(value: unknown): value is BduiNode {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function resolveTitleAlign(node: BduiNode): "start" | "center" {
+  const raw = [node.titleAlign, node.titleHorizontalAlign].find((item) => typeof item === "string");
+  const value = String(raw || "center").toLowerCase();
+  if (["start", "left", "flex-start"].includes(value)) {
+    return "start";
+  }
+  return "center";
+}
+
+function resolveMaxLines(value: unknown, fallback = 1): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const normalized = Math.floor(value);
+    if (normalized >= 1) {
+      return normalized;
+    }
+  }
+  return fallback;
+}
+
+function textClampStyle(maxLines: number): CSSProperties {
+  if (maxLines <= 1) {
+    return {};
+  }
+  return {
+    display: "-webkit-box",
+    WebkitBoxOrient: "vertical",
+    WebkitLineClamp: maxLines,
+    whiteSpace: "normal",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  };
+}
+
+interface NormalizedNavbarAction {
+  icon: unknown;
+  title: string;
+  action: BduiAction;
+}
+
+function normalizeNavbarAction(item: unknown, index: number): NormalizedNavbarAction {
+  const defaultAction: BduiAction = { type: "log", value: `navbar action ${index + 1}` };
+  const defaultTitle = `action ${index + 1}`;
+
+  if (typeof item === "string") {
+    return {
+      icon: item,
+      title: defaultTitle,
+      action: defaultAction,
+    };
+  }
+
+  if (item && typeof item === "object") {
+    const record = item as Record<string, unknown>;
+    const seemsActionObject = record.icon !== undefined || record.title !== undefined || record.action !== undefined;
+
+    if (seemsActionObject) {
+      return {
+        icon: record.icon ?? "menu",
+        title: String(record.title || defaultTitle),
+        action: (record.action as BduiAction) || defaultAction,
+      };
+    }
+
+    return {
+      icon: record,
+      title: defaultTitle,
+      action: defaultAction,
+    };
+  }
+
+  return {
+    icon: "menu",
+    title: defaultTitle,
+    action: defaultAction,
+  };
+}
+
+interface NavbarNodeProps extends PreviewRendererProps {
+  node: BduiNode;
+  style: CSSProperties;
+  disabled: boolean;
+}
+
+function NavbarNode({ node, style, disabled, inputValues, onInputChange, onAction, buttonFallback }: NavbarNodeProps): JSX.Element {
+  const leftRef = useRef<HTMLDivElement | null>(null);
+  const rightRef = useRef<HTMLDivElement | null>(null);
+  const [sideWidth, setSideWidth] = useState(34);
+
+  useLayoutEffect(() => {
+    const updateSideWidth = () => {
+      const leftWidth = Math.ceil(leftRef.current?.getBoundingClientRect().width || 0);
+      const rightWidth = Math.ceil(rightRef.current?.getBoundingClientRect().width || 0);
+      const next = Math.max(34, leftWidth, rightWidth);
+      setSideWidth((current) => (current === next ? current : next));
+    };
+
+    updateSideWidth();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateSideWidth);
+      return () => window.removeEventListener("resize", updateSideWidth);
+    }
+
+    const observer = new ResizeObserver(() => updateSideWidth());
+    if (leftRef.current) {
+      observer.observe(leftRef.current);
+    }
+    if (rightRef.current) {
+      observer.observe(rightRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  const actionsRaw = Array.isArray(node.actions) ? node.actions : [];
+  const actions = actionsRaw.map((item, index) => normalizeNavbarAction(item, index));
+  const showBack = node.showBack !== false && node.showLeftButton !== false;
+  const titleAlign = resolveTitleAlign(node);
+  const titleMaxLines = resolveMaxLines(node.titleMaxLines, 1);
+  const subtitleMaxLines = resolveMaxLines(node.subtitleMaxLines, 1);
+  const hasCenterContent = isNodeObject(node.centerContent);
+  const hasSubtitle = typeof node.subtitle === "string" && node.subtitle.trim().length > 0;
+
+  const classNames = [
+    "node",
+    "node-navbar",
+    titleAlign === "start" ? "node-navbar--title-start" : "node-navbar--title-center",
+    hasCenterContent ? "node-navbar--center-content" : "",
+    !hasSubtitle && !hasCenterContent ? "node-navbar--single-line" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const navbarStyle: CSSProperties = { ...style };
+  (navbarStyle as Record<string, string>)["--navbar-side-width"] = `${sideWidth}px`;
+
+  return (
+    <header className={classNames} style={navbarStyle}>
+      <div className="node-navbar-left" ref={leftRef}>
+        {showBack ? (
+          <button
+            type="button"
+            disabled={disabled}
+            className="node node-icon-button node-navbar-icon-button"
+            onClick={() =>
+              onAction((node.backAction || node.backButtonClick || node.leftAction || { type: "navigate", route: "back" }) as BduiAction, {
+                sourceId: node.id,
+                icon: node.backIcon || node.leftIcon || "arrow-left",
+              })
+            }
+          >
+            {iconButton(node.backIcon || node.leftIcon || "arrow-left", String(node.backTitle || node.leftTitle || "Back"))}
+          </button>
+        ) : (
+          <span className="node-navbar-placeholder" aria-hidden="true" />
+        )}
+      </div>
+
+      <div className="node-navbar-center">
+        {hasCenterContent && node.centerContent ? (
+          <NodeRenderer
+            node={node.centerContent}
+            inputValues={inputValues}
+            onInputChange={onInputChange}
+            onAction={onAction}
+            buttonFallback={buttonFallback}
+          />
+        ) : (
+          <>
+            <p className="node-navbar-title" style={textClampStyle(titleMaxLines)}>
+              {String(node.title || "")}
+            </p>
+            {hasSubtitle ? (
+              <p className="node-navbar-subtitle" style={textClampStyle(subtitleMaxLines)}>
+                {String(node.subtitle)}
+              </p>
+            ) : null}
+          </>
+        )}
+      </div>
+
+      <div className="node-navbar-actions" ref={rightRef}>
+        {actions.map((item, index) => (
+          <button
+            key={`${String(item.title)}_${index}`}
+            type="button"
+            disabled={disabled}
+            className="node node-icon-button node-navbar-icon-button"
+            onClick={() => onAction(item.action, { sourceId: node.id, icon: item.icon, actionIndex: index })}
+          >
+            {iconButton(item.icon, String(item.title))}
+          </button>
+        ))}
+      </div>
+    </header>
   );
 }
 
@@ -235,7 +510,7 @@ function NodeRenderer({
   }
 
   if (node.type === "iconbutton") {
-    const label = String(node.title || node.icon || "icon");
+    const label = String(node.title || (typeof node.icon === "string" ? node.icon : "icon"));
     return (
       <button
         type="button"
@@ -246,7 +521,7 @@ function NodeRenderer({
         title={label}
         onClick={() => onAction(node.action, { sourceId: node.id, icon: node.icon })}
       >
-        {iconButton(String(node.icon || "menu"), label)}
+        {iconButton(node.icon || "menu", label)}
       </button>
     );
   }
@@ -278,47 +553,16 @@ function NodeRenderer({
   }
 
   if (node.type === "navbar") {
-    const actions = Array.isArray(node.actions) ? node.actions : [];
     return (
-      <header className="node node-navbar" style={style}>
-        <div className="node-navbar-left">
-          {node.showBack !== false ? (
-            <button
-              type="button"
-              className="node node-icon-button node-navbar-icon-button"
-              onClick={() => onAction((node.backButtonClick || node.backAction || { type: "navigate", route: "back" }) as BduiAction, { sourceId: node.id })}
-            >
-              {iconButton(String(node.backIcon || "arrow-left"), String(node.backTitle || "Back"))}
-            </button>
-          ) : null}
-        </div>
-        <div className="node-navbar-center">
-          <p className="node-navbar-title">{String(node.title || "")}</p>
-          {typeof node.subtitle === "string" && node.subtitle.trim() ? <p className="node-navbar-subtitle">{node.subtitle}</p> : null}
-        </div>
-        <div className="node-navbar-actions">
-          {actions.map((item, index) => {
-            const normalized =
-              typeof item === "string"
-                ? { icon: item, title: `action ${index + 1}`, action: { type: "log", value: `navbar action ${index + 1}` } }
-                : {
-                    icon: item?.icon || "menu",
-                    title: item?.title || `action ${index + 1}`,
-                    action: item?.action || { type: "log", value: `navbar action ${index + 1}` },
-                  };
-            return (
-              <button
-                key={`${normalized.icon}_${index}`}
-                type="button"
-                className="node node-icon-button node-navbar-icon-button"
-                onClick={() => onAction(normalized.action, { sourceId: node.id, icon: normalized.icon })}
-              >
-                {iconButton(String(normalized.icon), String(normalized.title))}
-              </button>
-            );
-          })}
-        </div>
-      </header>
+      <NavbarNode
+        node={node}
+        style={style}
+        disabled={disabled}
+        inputValues={inputValues}
+        onInputChange={onInputChange}
+        onAction={onAction}
+        buttonFallback={buttonFallback}
+      />
     );
   }
 

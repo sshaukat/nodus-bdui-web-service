@@ -30,6 +30,19 @@ export interface BduiAction {
   [key: string]: unknown;
 }
 
+export type IconSource = "library" | "custom";
+
+export interface IconRef {
+  name?: string;
+  source?: IconSource;
+}
+
+export interface NavbarActionItem {
+  icon?: string | IconRef;
+  title?: string;
+  action?: BduiAction;
+}
+
 export interface BduiNode {
   type?: string;
   id?: string;
@@ -39,7 +52,7 @@ export interface BduiNode {
   children?: BduiNode[];
   value?: string;
   title?: string;
-  icon?: string;
+  icon?: string | IconRef;
   justify?: string;
   distribution?: string;
   alignItems?: string;
@@ -50,12 +63,24 @@ export interface BduiNode {
   onChange?: BduiAction;
   placeholder?: string;
   subtitle?: string;
+  sourceType?: string;
+  showLeftButton?: boolean;
+  leftIcon?: string | IconRef;
+  leftTitle?: string;
+  leftAction?: BduiAction;
+  titleHorizontalAlign?: "start" | "center";
+  titleAlign?: "start" | "center";
+  titleWrap?: boolean;
+  subtitleWrap?: boolean;
+  titleMaxLines?: number;
+  subtitleMaxLines?: number;
+  centerContent?: BduiNode;
   showBack?: boolean;
-  backIcon?: string;
+  backIcon?: string | IconRef;
   backTitle?: string;
   backAction?: BduiAction;
   backButtonClick?: BduiAction;
-  actions?: Array<string | { icon?: string; title?: string; action?: BduiAction }>;
+  actions?: Array<string | IconRef | NavbarActionItem>;
   [key: string]: unknown;
 }
 
@@ -79,6 +104,8 @@ export interface ComponentItem {
   description: LocaleField;
   fields: LocaleField;
   template: BduiNode;
+  template_raw?: string;
+  template_parse_error?: string | null;
   updated_by?: string;
   change_note?: string;
 }

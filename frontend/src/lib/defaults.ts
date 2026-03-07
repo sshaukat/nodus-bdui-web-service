@@ -99,4 +99,27 @@ export const DEFAULT_COMPONENT_LIBRARY: ComponentItem[] = [
       ],
     },
   },
+  {
+    type: "custom-nav-bar",
+    title: { ru: "Кастомный NavBar", en: "Custom NavBar" },
+    description: { ru: "Базовый навбар с parser-поддержкой", en: "Base nav bar with parser support" },
+    fields: {
+      ru: "showLeftButton, leftIcon, leftAction, title, subtitle, titleHorizontalAlign, centerContent, actions",
+      en: "showLeftButton, leftIcon, leftAction, title, subtitle, titleHorizontalAlign, centerContent, actions",
+    },
+    template: {
+      type: "custom-nav-bar",
+      id: "custom_navbar_1",
+      showLeftButton: true,
+      leftIcon: "arrow-left",
+      leftAction: { type: "navigate", route: "back" },
+      title: "Nodus",
+      subtitle: "Contract preview",
+      titleHorizontalAlign: "center",
+      actions: [
+        { icon: "search", title: "Search", action: { type: "log", value: "search" } },
+        { icon: "menu", title: "Menu", action: { type: "log", value: "menu" } },
+      ],
+    },
+  },
 ];
