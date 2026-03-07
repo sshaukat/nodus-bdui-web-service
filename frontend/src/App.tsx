@@ -57,6 +57,7 @@ interface ComponentDraft {
   fieldsRu: string;
   fieldsEn: string;
   templateRaw: string;
+  lastValidTemplate: BduiNode;
 }
 
 interface PanelWidths {
@@ -84,6 +85,7 @@ const INITIAL_COMPONENT_DRAFT: ComponentDraft = {
   fieldsRu: "",
   fieldsEn: "",
   templateRaw: "{}\n",
+  lastValidTemplate: {},
 };
 
 const PANEL_WIDTHS_KEY = "nodus.panelWidths.v1";
@@ -158,7 +160,87 @@ function loadLastSchema(): string {
   return ensureSchemaTemplate(saved || newDefaultSchema());
 }
 
+type ComponentTemplateErrorKind = "parse" | "root" | null;
+
+interface ComponentTemplateValidation {
+  template: BduiNode | null;
+  error: string | null;
+  errorKind: ComponentTemplateErrorKind;
+}
+
+function normalizeComponentTypeValue(value: string): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function defaultComponentTemplateId(componentType: string): string {
+  const normalized = normalizeComponentTypeValue(componentType);
+  return normalized ? `${normalized}_1` : "component_1";
+}
+
+function syncParsedComponentTemplateIdentity(template: BduiNode, nextTypeValue: string, previousTypeValue?: string): BduiNode {
+  const nextType = normalizeComponentTypeValue(nextTypeValue);
+  const previousType = normalizeComponentTypeValue(previousTypeValue || "");
+  const normalized: BduiNode = { ...template };
+
+  if (nextType) {
+    normalized.type = nextType;
+  }
+
+  const currentId = typeof normalized.id === "string" ? normalized.id.trim() : "";
+  const nextAutoId = defaultComponentTemplateId(nextType);
+  const previousAutoId = defaultComponentTemplateId(previousType);
+
+  if (!currentId) {
+    normalized.id = nextAutoId;
+  } else if (nextType && previousType && currentId === previousAutoId && currentId !== nextAutoId) {
+    normalized.id = nextAutoId;
+  } else {
+    normalized.id = currentId;
+  }
+
+  return normalized;
+}
+
+function validateComponentTemplateRaw(raw: string): ComponentTemplateValidation {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        template: null,
+        error: "template JSON root must be an object",
+        errorKind: "root",
+      };
+    }
+    return {
+      template: parsed as BduiNode,
+      error: null,
+      errorKind: null,
+    };
+  } catch (error) {
+    return {
+      template: null,
+      error: error instanceof Error ? error.message : "Invalid template JSON",
+      errorKind: "parse",
+    };
+  }
+}
+
+function syncComponentTemplateIdentity(raw: string, nextTypeValue: string, previousTypeValue?: string): { raw: string; template: BduiNode | null } {
+  const validation = validateComponentTemplateRaw(raw);
+  if (!validation.template) {
+    return { raw, template: null };
+  }
+
+  const normalized = syncParsedComponentTemplateIdentity(validation.template, nextTypeValue, previousTypeValue);
+  return {
+    raw: toJsonString(normalized),
+    template: normalized,
+  };
+}
+
 function componentDraftFromItem(item: ComponentItem): ComponentDraft {
+  const templateRaw = item.template_raw || toJsonString(item.template || {});
+  const synced = syncComponentTemplateIdentity(templateRaw, item.type, item.type);
   return {
     sourceType: item.type,
     type: item.type,
@@ -169,7 +251,8 @@ function componentDraftFromItem(item: ComponentItem): ComponentDraft {
     descriptionEn: item.description?.en || "",
     fieldsRu: item.fields?.ru || "",
     fieldsEn: item.fields?.en || "",
-    templateRaw: toJsonString(item.template || {}),
+    templateRaw: synced.raw,
+    lastValidTemplate: synced.template || syncParsedComponentTemplateIdentity(item.template || {}, item.type, item.type),
   };
 }
 
@@ -777,20 +860,77 @@ export default function App(): JSX.Element {
     [],
   );
 
+  const componentTemplateValidation = useMemo(
+    () => validateComponentTemplateRaw(componentDraft.templateRaw),
+    [componentDraft.templateRaw],
+  );
+
+  const componentTemplateErrorMessage = useMemo(() => {
+    if (!componentTemplateValidation.errorKind) {
+      return "";
+    }
+    if (componentTemplateValidation.errorKind === "root") {
+      return tt("componentTemplateRootMustBeObject");
+    }
+    return componentTemplateValidation.error || "Invalid template JSON";
+  }, [componentTemplateValidation.error, componentTemplateValidation.errorKind, tt]);
+
+  const handleComponentTypeChange = useCallback((nextTypeValue: string) => {
+    setComponentDraft((prev) => {
+      const synced = syncComponentTemplateIdentity(prev.templateRaw, nextTypeValue, prev.type);
+      return {
+        ...prev,
+        type: nextTypeValue,
+        templateRaw: synced.raw,
+        lastValidTemplate: synced.template || prev.lastValidTemplate,
+      };
+    });
+  }, []);
+
+  const handleComponentTemplateChange = useCallback((nextTemplateRaw: string) => {
+    setComponentDraft((prev) => {
+      const validation = validateComponentTemplateRaw(nextTemplateRaw);
+      return {
+        ...prev,
+        templateRaw: nextTemplateRaw,
+        lastValidTemplate: validation.template || prev.lastValidTemplate,
+      };
+    });
+  }, []);
+
+  const handleComponentTemplateFormat = useCallback(() => {
+    const validation = validateComponentTemplateRaw(componentDraft.templateRaw);
+    if (!validation.template) {
+      appendAction(
+        actionToLine(
+          "error",
+          validation.errorKind === "root" ? tt("componentTemplateRootMustBeObject") : validation.error || "Invalid template JSON",
+        ),
+      );
+      return;
+    }
+
+    const normalized = syncParsedComponentTemplateIdentity(validation.template, componentDraft.type, componentDraft.type);
+    setComponentDraft((prev) => ({
+      ...prev,
+      templateRaw: toJsonString(normalized),
+      lastValidTemplate: normalized,
+    }));
+  }, [appendAction, componentDraft.templateRaw, componentDraft.type, tt]);
+
   const handleComponentSave = useCallback(async () => {
-    const type = componentDraft.type.trim().toLowerCase();
+    const type = normalizeComponentTypeValue(componentDraft.type);
     if (!type) {
       appendAction(actionToLine("error", "component type is empty"));
       return;
     }
 
-    let template: BduiNode;
-    try {
-      template = JSON.parse(componentDraft.templateRaw) as BduiNode;
-    } catch (error) {
-      appendAction(actionToLine("error", error instanceof Error ? error.message : "Invalid template JSON"));
-      return;
-    }
+    const syncedTemplate = syncComponentTemplateIdentity(componentDraft.templateRaw, type, componentDraft.type);
+    const templateValidation = validateComponentTemplateRaw(syncedTemplate.raw);
+    const templateParseError = templateValidation.error;
+    const template =
+      templateValidation.template ||
+      syncParsedComponentTemplateIdentity(componentDraft.lastValidTemplate || {}, type, componentDraft.type);
 
     const payload: ComponentItem = {
       type,
@@ -808,6 +948,8 @@ export default function App(): JSX.Element {
         en: componentDraft.fieldsEn.trim(),
       },
       template,
+      template_raw: templateValidation.template ? syncedTemplate.raw : componentDraft.templateRaw,
+      template_parse_error: templateParseError || undefined,
       updated_by: "studio",
     };
 
@@ -836,13 +978,18 @@ export default function App(): JSX.Element {
         return [...filtered, persisted].sort((a, b) => a.type.localeCompare(b.type));
       });
       closeComponentModal();
-      appendAction(actionToLine("component", `saved: ${persisted.type}`));
+      appendAction(
+        actionToLine(
+          "component",
+          persisted.template_parse_error ? `${tt("componentSavedWithTemplateErrors")}: ${persisted.type}` : `saved: ${persisted.type}`,
+        ),
+      );
     } catch (error) {
       appendAction(actionToLine("error", error instanceof Error ? error.message : "component save error"));
     } finally {
       setIsBusy(false);
     }
-  }, [appendAction, closeComponentModal, componentDraft, writeToken]);
+  }, [appendAction, closeComponentModal, componentDraft, tt, writeToken]);
 
   const handleComponentDelete = useCallback(
     async (item: ComponentItem) => {
@@ -1228,7 +1375,7 @@ export default function App(): JSX.Element {
                   <span>Type</span>
                   <input
                     value={componentDraft.type}
-                    onChange={(event) => setComponentDraft((prev) => ({ ...prev, type: event.target.value }))}
+                    onChange={(event) => handleComponentTypeChange(event.target.value)}
                   />
                 </label>
                 <label className="context-field">
@@ -1303,10 +1450,24 @@ export default function App(): JSX.Element {
                 </label>
               </div>
 
-              <label className="context-field component-template-field">
-                <span>Template JSON</span>
-                <CodeEditor value={componentDraft.templateRaw} onChange={(value) => setComponentDraft((prev) => ({ ...prev, templateRaw: value }))} />
-              </label>
+              <div className="context-field component-template-field">
+                <div className="component-template-head">
+                  <span>Template JSON</span>
+                  <button className="btn btn-ghost component-template-format-btn" type="button" onClick={handleComponentTemplateFormat}>
+                    {tt("formatBtn")}
+                  </button>
+                </div>
+                <CodeEditor
+                  value={componentDraft.templateRaw}
+                  onChange={handleComponentTemplateChange}
+                  className={`component-template-editor ${componentTemplateValidation.errorKind ? "has-error" : ""}`}
+                />
+                {componentTemplateValidation.errorKind ? (
+                  <p className="component-template-error">
+                    {tt("componentTemplateDraftHint")} {componentTemplateErrorMessage}
+                  </p>
+                ) : null}
+              </div>
 
               <div className="modal-actions">
                 <button className="btn btn-ghost" type="button" onClick={closeComponentModal}>
