@@ -65,13 +65,15 @@ interface PanelWidths {
   editor: number;
 }
 
-type SplitterSide = "left" | "right" | null;
+type SplitterSide = "left" | "right" | "horizontal" | null;
 
 interface SplitterDragState {
   side: Exclude<SplitterSide, null>;
   startX: number;
+  startY: number;
   startComponents: number;
   startEditor: number;
+  startWorkspaceHeight: number;
 }
 
 const INITIAL_COMPONENT_DRAFT: ComponentDraft = {
@@ -89,10 +91,12 @@ const INITIAL_COMPONENT_DRAFT: ComponentDraft = {
 };
 
 const PANEL_WIDTHS_KEY = "nodus.panelWidths.v1";
+const WORKSPACE_HEIGHT_KEY = "nodus.workspaceHeight.v1";
 const PANEL_DEFAULTS: PanelWidths = {
   components: 410,
   editor: 652,
 };
+const WORKSPACE_HEIGHT_DEFAULT = 520;
 const PANEL_LIMITS = {
   componentsMin: 260,
   componentsMax: 720,
@@ -100,6 +104,11 @@ const PANEL_LIMITS = {
   editorMax: 1100,
   previewMin: 320,
   splittersWidth: 20,
+};
+const ROW_LIMITS = {
+  workspaceMin: 260,
+  telemetryMin: 140,
+  splitterHeight: 10,
 };
 
 function actionToLine(action: string, value?: string): string {
@@ -133,6 +142,15 @@ function loadPanelWidths(): PanelWidths {
   } catch {
     return PANEL_DEFAULTS;
   }
+}
+
+function loadWorkspaceHeight(): number {
+  const saved = localStorage.getItem(WORKSPACE_HEIGHT_KEY);
+  if (!saved) {
+    return WORKSPACE_HEIGHT_DEFAULT;
+  }
+  const parsed = Number(saved);
+  return Number.isFinite(parsed) ? parsed : WORKSPACE_HEIGHT_DEFAULT;
 }
 
 function fromStorageLocale(): Locale {
@@ -280,12 +298,14 @@ export default function App(): JSX.Element {
   const [isBusy, setIsBusy] = useState(false);
   const [isEditorExpanded, setIsEditorExpanded] = useState(false);
   const [panelWidths, setPanelWidths] = useState<PanelWidths>(() => loadPanelWidths());
+  const [workspaceHeight, setWorkspaceHeight] = useState<number>(() => loadWorkspaceHeight());
   const [activeSplitter, setActiveSplitter] = useState<SplitterSide>(null);
 
   const [componentLibrary, setComponentLibrary] = useState<ComponentItem[]>([]);
   const [isComponentModalOpen, setIsComponentModalOpen] = useState(false);
   const [componentDraft, setComponentDraft] = useState<ComponentDraft>(INITIAL_COMPONENT_DRAFT);
   const workspaceRef = useRef<HTMLElement | null>(null);
+  const editorLayoutRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<SplitterDragState | null>(null);
 
   const tt = useCallback((key: Parameters<typeof t>[1]) => t(locale, key), [locale]);
@@ -454,6 +474,10 @@ export default function App(): JSX.Element {
   }, [panelWidths]);
 
   useEffect(() => {
+    localStorage.setItem(WORKSPACE_HEIGHT_KEY, String(workspaceHeight));
+  }, [workspaceHeight]);
+
+  useEffect(() => {
     const ensureWidthsFit = () => {
       const workspace = workspaceRef.current;
       if (!workspace) {
@@ -483,6 +507,23 @@ export default function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    const ensureHeightsFit = () => {
+      const layout = editorLayoutRef.current;
+      if (!layout) {
+        return;
+      }
+
+      const totalHeight = Math.max(0, layout.clientHeight - ROW_LIMITS.splitterHeight);
+      const maxWorkspace = Math.max(ROW_LIMITS.workspaceMin, totalHeight - ROW_LIMITS.telemetryMin);
+      setWorkspaceHeight((current) => clamp(current, ROW_LIMITS.workspaceMin, maxWorkspace));
+    };
+
+    ensureHeightsFit();
+    window.addEventListener("resize", ensureHeightsFit);
+    return () => window.removeEventListener("resize", ensureHeightsFit);
+  }, [isEditorExpanded]);
+
+  useEffect(() => {
     if (!activeSplitter) {
       return;
     }
@@ -496,6 +537,21 @@ export default function App(): JSX.Element {
 
       const deltaX = event.clientX - drag.startX;
       const totalWidth = Math.max(0, workspace.clientWidth - PANEL_LIMITS.splittersWidth);
+
+      if (drag.side === "horizontal") {
+        const editorLayout = editorLayoutRef.current;
+        if (!editorLayout) {
+          return;
+        }
+
+        const deltaY = event.clientY - drag.startY;
+        const totalHeight = Math.max(0, editorLayout.clientHeight - ROW_LIMITS.splitterHeight);
+        const maxWorkspace = Math.max(ROW_LIMITS.workspaceMin, totalHeight - ROW_LIMITS.telemetryMin);
+        const nextWorkspace = clamp(drag.startWorkspaceHeight + deltaY, ROW_LIMITS.workspaceMin, maxWorkspace);
+
+        setWorkspaceHeight(nextWorkspace);
+        return;
+      }
 
       if (drag.side === "left") {
         const sum = drag.startComponents + drag.startEditor;
@@ -539,7 +595,7 @@ export default function App(): JSX.Element {
     const onMouseUp = () => {
       setActiveSplitter(null);
       dragStateRef.current = null;
-      document.body.classList.remove("is-resizing");
+      document.body.classList.remove("is-resizing-col", "is-resizing-row");
     };
 
     window.addEventListener("mousemove", onMouseMove);
@@ -547,7 +603,7 @@ export default function App(): JSX.Element {
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
-      document.body.classList.remove("is-resizing");
+      document.body.classList.remove("is-resizing-col", "is-resizing-row");
     };
   }, [activeSplitter]);
 
@@ -1062,13 +1118,16 @@ export default function App(): JSX.Element {
       dragStateRef.current = {
         side,
         startX: event.clientX,
+        startY: event.clientY,
         startComponents: panelWidths.components,
         startEditor: panelWidths.editor,
+        startWorkspaceHeight: workspaceHeight,
       };
       setActiveSplitter(side);
-      document.body.classList.add("is-resizing");
+      document.body.classList.remove("is-resizing-col", "is-resizing-row");
+      document.body.classList.add(side === "horizontal" ? "is-resizing-row" : "is-resizing-col");
     },
-    [panelWidths],
+    [panelWidths, workspaceHeight],
   );
 
   return (
@@ -1209,8 +1268,9 @@ export default function App(): JSX.Element {
         </p>
       </section>
 
-      <main className="workspace" ref={workspaceRef}>
-        <section className="card components-card" style={{ flexBasis: `${panelWidths.components}px` }}>
+      <div className="editor-layout" ref={editorLayoutRef}>
+        <main className="workspace" ref={workspaceRef} style={{ flexBasis: `${workspaceHeight}px` }}>
+          <section className="card components-card" style={{ flexBasis: `${panelWidths.components}px` }}>
           <div className="card-head">
             <h2>{tt("componentsTitle")}</h2>
             <div className="card-head-tools">
@@ -1264,17 +1324,17 @@ export default function App(): JSX.Element {
               </article>
             ))}
           </div>
-        </section>
+          </section>
 
-        <div
-          className={`workspace-splitter ${activeSplitter === "left" ? "is-dragging" : ""}`}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={locale === "ru" ? "Изменить ширину каталога и редактора" : "Resize catalog and editor"}
-          onMouseDown={(event) => handleSplitterMouseDown("left", event)}
-        />
+          <div
+            className={`workspace-splitter ${activeSplitter === "left" ? "is-dragging" : ""}`}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={locale === "ru" ? "Изменить ширину каталога и редактора" : "Resize catalog and editor"}
+            onMouseDown={(event) => handleSplitterMouseDown("left", event)}
+          />
 
-        <section className="card editor-card" style={{ flexBasis: `${panelWidths.editor}px` }}>
+          <section className="card editor-card" style={{ flexBasis: `${panelWidths.editor}px` }}>
           <div className="card-head">
             <h2>{tt("editorTitle")}</h2>
             <div className="card-head-tools">
@@ -1302,17 +1362,17 @@ export default function App(): JSX.Element {
           </div>
           <CodeEditor value={schemaText} onChange={setSchemaText} className="editor-host" />
           <p className="editor-file-info">{selectedScreen ? `${selectedScreen.name} (${selectedScreen.status})` : "-"}</p>
-        </section>
+          </section>
 
-        <div
-          className={`workspace-splitter ${activeSplitter === "right" ? "is-dragging" : ""}`}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={locale === "ru" ? "Изменить ширину редактора и предпросмотра" : "Resize editor and preview"}
-          onMouseDown={(event) => handleSplitterMouseDown("right", event)}
-        />
+          <div
+            className={`workspace-splitter ${activeSplitter === "right" ? "is-dragging" : ""}`}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={locale === "ru" ? "Изменить ширину редактора и предпросмотра" : "Resize editor and preview"}
+            onMouseDown={(event) => handleSplitterMouseDown("right", event)}
+          />
 
-        <section className="card preview-card">
+          <section className="card preview-card">
           <div className="card-head">
             <h2>{tt("previewTitle")}</h2>
             <div className="card-head-tools">
@@ -1331,11 +1391,19 @@ export default function App(): JSX.Element {
               buttonFallback={tt("buttonFallback")}
             />
           </div>
-        </section>
-      </main>
+          </section>
+        </main>
 
-      <section className="telemetry">
-        <section className="card status-card">
+        <div
+          className={`workspace-row-splitter ${activeSplitter === "horizontal" ? "is-dragging" : ""}`}
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label={locale === "ru" ? "Изменить высоту верхних и нижних блоков" : "Resize upper and lower sections"}
+          onMouseDown={(event) => handleSplitterMouseDown("horizontal", event)}
+        />
+
+        <section className="telemetry">
+          <section className="card status-card">
           <div className="card-head">
             <h2>{tt("validationTitle")}</h2>
             <span className="chip chip-danger">decode + validate</span>
@@ -1348,9 +1416,9 @@ export default function App(): JSX.Element {
               </li>
             ))}
           </ul>
-        </section>
+          </section>
 
-        <section className="card status-card">
+          <section className="card status-card">
           <div className="card-head">
             <h2>{tt("actionTitle")}</h2>
             <span className="chip chip-info">runtime</span>
@@ -1360,8 +1428,9 @@ export default function App(): JSX.Element {
               <li key={`${line}_${index}`}>{line}</li>
             ))}
           </ul>
+          </section>
         </section>
-      </section>
+      </div>
 
       {isComponentModalOpen ? (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="componentEditorTitle">
