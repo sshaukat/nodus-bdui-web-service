@@ -7,7 +7,40 @@ PORT="${PORT:-8080}"
 PID_FILE="${PID_FILE:-$SCRIPT_DIR/.server.pid}"
 LOG_FILE="${LOG_FILE:-$SCRIPT_DIR/.server.log}"
 
+stop_pid() {
+  local target_pid="$1"
+  if ! kill -0 "$target_pid" 2>/dev/null; then
+    return 0
+  fi
+
+  kill "$target_pid"
+  for _ in {1..25}; do
+    if ! kill -0 "$target_pid" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.2
+  done
+
+  if kill -0 "$target_pid" 2>/dev/null; then
+    kill -9 "$target_pid"
+  fi
+}
+
 "$SCRIPT_DIR/stop-service.sh" >/dev/null 2>&1 || true
+
+if command -v lsof >/dev/null 2>&1; then
+  LISTEN_PID="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -n 1 || true)"
+  if [[ -n "${LISTEN_PID}" ]]; then
+    LISTEN_CMD="$(ps -p "$LISTEN_PID" -o command= 2>/dev/null || true)"
+    if [[ "${LISTEN_CMD}" == *"server.py"* && "${LISTEN_CMD}" == *"--port ${PORT}"* ]]; then
+      stop_pid "$LISTEN_PID"
+    else
+      echo "Cannot restart service: ${HOST}:${PORT} is in use by pid ${LISTEN_PID}."
+      echo "Process: ${LISTEN_CMD}"
+      exit 1
+    fi
+  fi
+fi
 
 cd "$SCRIPT_DIR"
 nohup python3 server.py --host "$HOST" --port "$PORT" >>"$LOG_FILE" 2>&1 &
